@@ -7,12 +7,16 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
+#include "message.hpp"
+#include "queue.hpp"
 #include "util.hpp"
 
-#define SHM_NAME "ckptfs"
-#define SHM_SIZE 4096
+using message_queue = queue<message>;
 
-void *shm;
+#define SHM_NAME "ckptfs"
+#define SHM_SIZE sizeof(message_queue)
+
+message_queue *mq;
 
 static void init_shm(void)
 {
@@ -22,8 +26,8 @@ static void init_shm(void)
 	if (shm_fd == -1)
 		error("shm_open() failed (" + std::string(strerror(errno)) + ")");
 
-	shm = mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-	if (shm == MAP_FAILED)
+	mq = static_cast<message_queue *>(mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+	if (mq == MAP_FAILED)
 		error("mmap() failed (" + std::string(strerror(errno)) + ")");
 
 	if (close(shm_fd) == -1)
@@ -32,7 +36,7 @@ static void init_shm(void)
 
 static void exit_shm(void)
 {
-	if (munmap(shm, SHM_SIZE) == -1)
+	if (munmap(static_cast<void *>(mq), SHM_SIZE) == -1)
 		error("munmap() failed (" + std::string(strerror(errno)) + ")");
 }
 

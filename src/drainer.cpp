@@ -11,10 +11,15 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 
-#define SHM_NAME "ckptfs"
-#define SHM_SIZE 4096
+#include "message.hpp"
+#include "queue.hpp"
 
-void *shm;
+using message_queue = queue<message>;
+
+#define SHM_NAME "ckptfs"
+#define SHM_SIZE sizeof(message_queue)
+
+static message_queue *mq;
 
 static void sigint_handler(int signum)
 {
@@ -25,7 +30,7 @@ static void sigint_handler(int signum)
 
 	/* TODO: clean up */
 
-	if (munmap(shm, SHM_SIZE) == -1)
+	if (munmap(static_cast<void *>(mq), SHM_SIZE) == -1)
 		throw std::runtime_error("munmap() failed (" + std::string(strerror(errno)) + ")");
 
 	exit(EXIT_SUCCESS);
@@ -48,7 +53,7 @@ int main(void)
 	if (ftruncate(shm_fd, SHM_SIZE) == -1)
 		throw std::runtime_error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((shm = mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0)) == MAP_FAILED)
+	if ((mq = static_cast<message_queue *>(mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0))) == MAP_FAILED)
 		throw std::runtime_error("mmap() failed (" + std::string(strerror(errno)) + ")");
 
 	if (close(shm_fd) == -1)
