@@ -1,11 +1,11 @@
-#ifndef CKPTFS_MQUEUE_HPP
-#define CKPTFS_MQUEUE_HPP
+#ifndef CKPTFS_QUEUE_HPP
+#define CKPTFS_QUEUE_HPP
 
 #include <mutex>
 #include <semaphore>
 
 template <typename T, size_t capacity = 256>
-class mqueue {
+class queue {
 private:
 	T buffer[capacity];
 	int front, rear;
@@ -13,7 +13,7 @@ private:
 	std::counting_semaphore<capacity> slots, items;
 
 public:
-	mqueue(void) : front(0), rear(0), slots(capacity), items(0)
+	queue(void) : front(0), rear(0), slots(capacity), items(0)
 	{
 	}
 
@@ -42,4 +42,4 @@ public:
 	}
 };
 
-#endif //CKPTFS_MQUEUE_HPP
+#endif //CKPTFS_QUEUE_HPP
