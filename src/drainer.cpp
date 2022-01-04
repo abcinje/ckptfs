@@ -19,21 +19,13 @@ using message_queue = queue<message>;
 #define SHM_NAME "ckptfs"
 #define SHM_SIZE sizeof(message_queue)
 
+static bool stopped;
 static message_queue *mq;
 
 static void sigint_handler(int signum)
 {
 	std::cout << "Terminating." << std::endl;
-
-	if (shm_unlink(SHM_NAME) == -1)
-		throw std::runtime_error("shm_unlink() failed (" + std::string(strerror(errno)) + ")");
-
-	/* TODO: clean up */
-
-	if (munmap(static_cast<void *>(mq), SHM_SIZE) == -1)
-		throw std::runtime_error("munmap() failed (" + std::string(strerror(errno)) + ")");
-
-	exit(EXIT_SUCCESS);
+	stopped = true;
 }
 
 static void do_drain(void)
@@ -59,6 +51,14 @@ int main(void)
 	if (close(shm_fd) == -1)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
 
-	while (true)
+	while (!stopped)
 		do_drain();
+
+	if (shm_unlink(SHM_NAME) == -1)
+		throw std::runtime_error("shm_unlink() failed (" + std::string(strerror(errno)) + ")");
+
+	if (munmap(static_cast<void *>(mq), SHM_SIZE) == -1)
+		throw std::runtime_error("munmap() failed (" + std::string(strerror(errno)) + ")");
+
+	return 0;
 }
