@@ -14,6 +14,7 @@ public:
 	off_t offset;
 	size_t len;
 
+	message(void);
 	message(long syscall, const char *path, pid_t pid, int fd, off_t offset, size_t len);
 	message(const message &copy);
 };
