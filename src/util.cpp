@@ -1,8 +1,9 @@
 #include <cstdlib>
 
-#include <libsyscall_intercept_hook_point.h>
 #include <syscall.h>
 #include <unistd.h>
+
+#include <libsyscall_intercept_hook_point.h>
 
 #include "util.hpp"
 
