@@ -14,7 +14,7 @@ sudo apt install g++-11
 ```
 mkdir -p build
 pushd build
-cmake -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 .. && make -j
+cmake -DCMAKE_CXX_COMPILER="$(which g++-11)" .. && make -j
 popd
 ```
 
