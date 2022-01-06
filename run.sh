@@ -13,7 +13,7 @@ mkdir -p "$CKPT"
 mkdir -p "$BB"
 mkdir -p "$PFS"
 
-repos_root=$(dirname $0)
+repos_root="$(dirname $0)"
 
 if [ ! -e "/dev/shm/ckptfs" ]; then
   "$repos_root/build/bin/drainer" &
