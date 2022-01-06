@@ -1,13 +1,13 @@
 # daemon
 
-add_executable(drainer drainer.cpp)
+add_executable(drainer drainer.cpp drainer_syscall.cpp message.cpp)
 set_target_properties(drainer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 target_link_libraries(drainer rt)
 
 # library
 
-add_library(ckpt SHARED hook.cpp util.cpp)
+add_library(ckpt SHARED hook.cpp ckpt_syscall.cpp message.cpp util.cpp)
 set_target_properties(ckpt PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 find_package(PkgConfig REQUIRED)
