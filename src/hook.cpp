@@ -1,12 +1,13 @@
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
-#include <fcntl.h>
 #include <syscall.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+
+#include <boost/interprocess/managed_shared_memory.hpp>
+
+namespace bi = boost::interprocess;
 
 #include <libsyscall_intercept_hook_point.h>
 
@@ -17,11 +18,10 @@
 
 using message_queue = queue<message>;
 
-#define SHM_NAME "ckptfs"
-#define SHM_SIZE sizeof(message_queue)
-
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 message_queue *mq;
+
+static bi::managed_shared_memory *segment;
 
 static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result)
 {
@@ -77,38 +77,19 @@ static void exit_path(void)
 	delete pfs_dir;
 }
 
-static void init_shm(void)
-{
-	int shm_fd;
-
-	shm_fd = shm_open(SHM_NAME, O_RDWR, 0664);
-	if (shm_fd == -1)
-		error("shm_open() failed (" + std::string(strerror(errno)) + ")");
-
-	mq = static_cast<message_queue *>(mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
-	if (mq == MAP_FAILED)
-		error("mmap() failed (" + std::string(strerror(errno)) + ")");
-
-	if (close(shm_fd) == -1)
-		error("close() failed (" + std::string(strerror(errno)) + ")");
-}
-
-static void exit_shm(void)
-{
-	if (munmap(static_cast<void *>(mq), SHM_SIZE) == -1)
-		error("munmap() failed (" + std::string(strerror(errno)) + ")");
-}
-
 static __attribute__((constructor)) void init(void)
 {
 	init_path();
-	init_shm();
+
+	segment = new bi::managed_shared_memory(bi::open_only, "ckptfs");
+	mq = segment->find<message_queue>("q").first;
 
 	intercept_hook_point = hook;
 }
 
 static __attribute__((destructor)) void exit(void)
 {
-	exit_shm();
+	delete segment;
+
 	exit_path();
 }

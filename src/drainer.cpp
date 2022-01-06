@@ -6,10 +6,11 @@
 #include <stdexcept>
 #include <string>
 
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+#include <syscall.h>
+
+#include <boost/interprocess/managed_shared_memory.hpp>
+
+namespace bi = boost::interprocess;
 
 #include "drainer_syscall.hpp"
 #include "message.hpp"
@@ -17,17 +18,19 @@
 
 using message_queue = queue<message>;
 
-#define SHM_NAME "ckptfs"
-#define SHM_SIZE sizeof(message_queue)
-
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 int pipefd[2];
 
-static sigset_t sigmask, prev_sigmask;
+static bi::managed_shared_memory *segment;
 static message_queue *mq;
 
 static void do_drain(void)
 {
+	sigset_t sigmask, prev_sigmask;
+
+	sigemptyset(&sigmask);
+	sigaddset(&sigmask, SIGINT);
+
 	while (true) {
 		message msg(mq->dispatch());
 
@@ -90,11 +93,9 @@ static void install_sigint_handler(void)
 	auto sigint_handler = [](int signum) {
 		std::cout << "Terminating." << std::endl;
 
-		if (shm_unlink(SHM_NAME) == -1)
-			throw std::runtime_error("shm_unlink() failed (" + std::string(strerror(errno)) + ")");
-
-		if (munmap(static_cast<void *>(mq), SHM_SIZE) == -1)
-			throw std::runtime_error("munmap() failed (" + std::string(strerror(errno)) + ")");
+		segment->destroy<message_queue>("q");
+		delete segment;
+		bi::shared_memory_object::remove("ckptfs");
 
 		exit_path();
 
@@ -110,28 +111,12 @@ static void install_sigint_handler(void)
 
 int main(void)
 {
-	int shm_fd;
-
 	init_path();
 
+	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 30);
+	mq = segment->construct<message_queue>("q")();
+
 	install_sigint_handler();
-
-	if ((shm_fd = shm_open(SHM_NAME, O_RDWR | O_CREAT | O_EXCL, 0664)) == -1)
-		throw std::runtime_error("shm_open() failed (" + std::string(strerror(errno)) + ")");
-
-	if (ftruncate(shm_fd, SHM_SIZE) == -1)
-		throw std::runtime_error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
-
-	if ((mq = static_cast<message_queue *>(mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0))) == MAP_FAILED)
-		throw std::runtime_error("mmap() failed (" + std::string(strerror(errno)) + ")");
-
-	new (mq) message_queue();
-
-	if (close(shm_fd) == -1)
-		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
-
-	sigemptyset(&sigmask);
-	sigaddset(&sigmask, SIGINT);
 
 	if (pipe(pipefd) == -1)
 		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
