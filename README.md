@@ -17,3 +17,8 @@ pushd build
 cmake -DCMAKE_CXX_COMPILER=/usr/bin/g++-11 .. && make -j
 popd
 ```
+
+## Run
+```
+./run.sh <command>
+```
