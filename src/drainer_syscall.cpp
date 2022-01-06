@@ -64,10 +64,10 @@ void drainer::open(const message &msg)
 	std::string bb_file(*bb_dir + file);
 	std::string pfs_file(*pfs_dir + file);
 
-	if ((bb_fd = ::open(bb_file.c_str(), O_RDWR)) == -1)
+	if ((bb_fd = ::open(bb_file.c_str(), O_RDONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((pfs_fd = ::open(pfs_file.c_str(), O_RDWR)) == -1)
+	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY | O_CREAT, 0664)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd}}).second)
