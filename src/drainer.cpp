@@ -122,6 +122,8 @@ int main(void)
 	if ((mq = static_cast<message_queue *>(mmap(nullptr, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0))) == MAP_FAILED)
 		throw std::runtime_error("mmap() failed (" + std::string(strerror(errno)) + ")");
 
+	new (mq) message_queue();
+
 	if (close(shm_fd) == -1)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
 
