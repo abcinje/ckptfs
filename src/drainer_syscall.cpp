@@ -65,7 +65,7 @@ void drainer::open(const message &msg)
 	std::string pfs_file(*pfs_dir + file);
 
 	if ((bb_fd = ::open(bb_file.c_str(), O_RDWR)) == -1)
-		throw std::runtime_error("open() failed (" + std::string(strerror(errno)));
+		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	if ((pfs_fd = ::open(pfs_file.c_str(), O_RDWR)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
