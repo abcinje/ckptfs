@@ -32,6 +32,8 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::open((const char *)arg0, (int)arg1, (mode_t)arg2, (int *)result);
 		case SYS_close:
 			return ckpt::close((int)arg0, (int *)result);
+		case SYS_lseek:
+			return ckpt::lseek((int)arg0, (off_t)arg1, (int)arg2, (off_t *)result);
 		case SYS_pwrite64:
 			return ckpt::pwrite((int)arg0, (const void *)arg1, (size_t)arg2, (off_t)arg3, (ssize_t *)result);
 		case SYS_fsync:
@@ -39,7 +41,6 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 		case SYS_openat:
 			return ckpt::openat((int)arg0, (const char *)arg1, (int)arg2, (mode_t)arg3, (int *)result);
 		case SYS_read:
-		case SYS_lseek:
 		case SYS_pread64:
 		case SYS_readv:
 		case SYS_writev:

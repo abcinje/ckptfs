@@ -97,6 +97,25 @@ int ckpt::close(int fd, int *result)
 	return 0;
 }
 
+int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
+{
+	off_t *file_offset;
+
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		file_offset = &it->second;
+	} else {
+		return 1;
+	}
+
+	if ((*result = syscall_no_intercept(SYS_lseek, fd, offset, whence)) == -1)
+		error("lseek() failed (" + std::string(strerror(errno)) + ")");
+
+	*file_offset = *result;
+
+	return 0;
+}
+
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	pid_t pid;
