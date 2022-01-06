@@ -43,6 +43,9 @@ static void do_drain(void)
 			case SYS_close:
 				drainer::close(msg);
 				break;
+			case SYS_pwrite64:
+				drainer::pwrite(msg);
+				break;
 			case SYS_fsync:
 				drainer::fsync(msg);
 				break;

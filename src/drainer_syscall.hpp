@@ -8,6 +8,7 @@ namespace drainer
 	void write(const message &msg);
 	void open(const message &msg);
 	void close(const message &msg);
+	void pwrite(const message &msg);
 	void fsync(const message &msg);
 }
 

@@ -8,6 +8,7 @@ namespace ckpt
 	int write(int fd, const void *buf, size_t count, ssize_t *result);
 	int open(const char *pathname, int flags, mode_t mode, int *result);
 	int close(int fd, int *result);
+	int pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result);
 	int fsync(int fd, int *result);
 	int openat(int dirfd, const char *pathname, int flags, mode_t mode, int *result);
 }

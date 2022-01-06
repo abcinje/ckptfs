@@ -97,6 +97,22 @@ int ckpt::close(int fd, int *result)
 	return 0;
 }
 
+int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
+{
+	pid_t pid;
+
+	if (fmap.find(fd) == fmap.end())
+		return 1;
+
+	if ((*result = syscall_no_intercept(SYS_pwrite64, fd, buf, count, offset)) == -1)
+		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
+
+	pid = syscall_no_intercept(SYS_getpid);
+	mq->issue(message(SYS_pwrite64, nullptr, pid, fd, offset, *result));
+
+	return 0;
+}
+
 int ckpt::fsync(int fd, int *result)
 {
 	static bool sigusr1_handler_installed;
