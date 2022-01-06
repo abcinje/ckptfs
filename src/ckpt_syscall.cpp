@@ -32,7 +32,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	if (it != fmap.end()) {
 		offset = &it->second;
 	} else {
-		error("ckpt::write() failed (no such key)");
+		return 1;
 	}
 
 	if ((*result = syscall_no_intercept(SYS_write, fd, buf, count)) == -1)
@@ -56,7 +56,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 	std::string ckpt_file(pathname);
 	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
-		error("ckpt::open() failed (invalid pathname)");
+		return 1;
 
 	if (flags & O_APPEND)
 		error("ckpt::open() failed (the O_APPEND flag is unsupported)");
@@ -81,11 +81,14 @@ int ckpt::close(int fd, int *result)
 {
 	pid_t pid;
 
+	auto it = fmap.find(fd);
+	if (it == fmap.end())
+		return 1;
+
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_close, nullptr, pid, fd, 0, 0));
 
-	if (fmap.erase(fd) == 0)
-		error("ckpt::close() failed (no such key)");
+	fmap.erase(it);
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
 		error("close() failed");
@@ -99,10 +102,14 @@ int ckpt::fsync(int fd, int *result)
 	static bool sigusr1_handler_installed;
 	static bool signaled;
 	struct sigaction action;
+	void (*sigusr1_handler)(int);
 
 	pid_t pid;
 
-	auto sigusr1_handler = [](int signum) {
+	if (fmap.find(fd) == fmap.end())
+		return 1;
+
+	sigusr1_handler = [](int signum) {
 		signaled = true;
 	};
 
