@@ -19,9 +19,8 @@ namespace bi = boost::interprocess;
 using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
+bi::managed_shared_memory *segment;
 message_queue *mq;
-
-static bi::managed_shared_memory *segment;
 
 static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result)
 {

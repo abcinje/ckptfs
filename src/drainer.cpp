@@ -19,9 +19,9 @@ namespace bi = boost::interprocess;
 using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
+bi::managed_shared_memory *segment;
 int pipefd[2];
 
-static bi::managed_shared_memory *segment;
 static message_queue *mq;
 
 static void do_drain(void)

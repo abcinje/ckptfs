@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include <fcntl.h>
+#include <syscall.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -19,6 +20,7 @@
 using message_queue = queue<message>;
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
+extern bi::managed_shared_memory *segment;
 extern message_queue *mq;
 
 static std::unordered_map<int, off_t> fmap; // fmap: fd -> offset
@@ -39,7 +41,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 		error("write() failed (" + std::string(strerror(errno)) + ")");
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_write, nullptr, pid, fd, *offset, *result));
+	mq->issue(message(SYS_write, pid, fd, *offset, *result, 0));
 
 	*offset += *result;
 
@@ -48,6 +50,8 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
+	void *shm_pathname;
+	shm_handle handle;
 	pid_t pid;
 	int fd;
 
@@ -67,8 +71,12 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	if ((fd = syscall_no_intercept(SYS_open, bb_file.c_str(), flags, mode)) == -1)
 		error("open() failed (" + std::string(strerror(errno)) + ")");
 
+	shm_pathname = segment->allocate(strlen(pathname) + 1);
+	std::memcpy(shm_pathname, pathname, strlen(pathname) + 1);
+	handle = segment->get_handle_from_address(shm_pathname);
+
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_open, pathname, pid, fd, 0, 0));
+	mq->issue(message(SYS_open, pid, fd, 0, 0, handle));
 
 	if (!fmap.insert({fd, 0}).second)
 		error("ckpt::open() failed (the same key already exists)");
@@ -86,7 +94,7 @@ int ckpt::close(int fd, int *result)
 		return 1;
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_close, nullptr, pid, fd, 0, 0));
+	mq->issue(message(SYS_close, pid, fd, 0, 0, 0));
 
 	fmap.erase(it);
 
@@ -127,7 +135,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_pwrite64, nullptr, pid, fd, offset, *result));
+	mq->issue(message(SYS_pwrite64, pid, fd, offset, *result, 0));
 
 	return 0;
 }
@@ -160,7 +168,7 @@ int ckpt::fsync(int fd, int *result)
 
 	signaled = false;
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_fsync, nullptr, pid, fd, 0, 0));
+	mq->issue(message(SYS_fsync, pid, fd, 0, 0, 0));
 	while (!signaled);
 
 	*result = 0;

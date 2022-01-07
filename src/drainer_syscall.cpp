@@ -15,6 +15,7 @@
 #include "drainer_syscall.hpp"
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
+extern bi::managed_shared_memory *segment;
 extern int pipefd[2];
 
 namespace std
@@ -63,9 +64,12 @@ void drainer::write(const message &msg)
 
 void drainer::open(const message &msg)
 {
+	void *shm_pathname;
 	int bb_fd, pfs_fd;
 
-	std::string ckpt_file(msg.path);
+	shm_pathname = segment->get_address_from_handle(msg.handle);
+	std::string ckpt_file(static_cast<char *>(shm_pathname));
+	segment->deallocate(shm_pathname);
 	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
 		throw std::runtime_error("drainer::open() failed (invalid pathname)");
 

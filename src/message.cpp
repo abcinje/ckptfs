@@ -4,20 +4,16 @@
 
 #include "message.hpp"
 
-message::message(void) : message(-1, nullptr, 0, 0, 0, 0)
+message::message(void) : message(-1, 0, 0, 0, 0, 0)
 {
 }
 
-message::message(long syscall, const char *path, pid_t pid, int fd, off_t offset, size_t len)
-		: syscall(syscall), pid(pid), fd(fd), offset(offset), len(len)
+message::message(long syscall, pid_t pid, int fd, off_t offset, size_t len, shm_handle handle)
+		: syscall(syscall), pid(pid), fd(fd), offset(offset), len(len), handle(handle)
 {
-	if (syscall == SYS_open)
-		strncpy(this->path, path, PATH_MAX);
 }
 
 message::message(const message &copy)
-		: syscall(copy.syscall), pid(copy.pid), fd(copy.fd), offset(copy.offset), len(copy.len)
+		: syscall(copy.syscall), pid(copy.pid), fd(copy.fd), offset(copy.offset), len(copy.len), handle(handle)
 {
-	if (syscall == SYS_open)
-		strncpy(path, copy.path, PATH_MAX);
 }
