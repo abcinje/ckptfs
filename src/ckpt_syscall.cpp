@@ -142,34 +142,22 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 int ckpt::fsync(int fd, int *result)
 {
-	static bool sigusr1_handler_installed;
-	static bool signaled;
-	struct sigaction action;
-	void (*sigusr1_handler)(int);
-
+	void *shm_synced;
+	shm_handle handle;
 	pid_t pid;
 
 	if (fmap.find(fd) == fmap.end())
 		return 1;
 
-	sigusr1_handler = [](int signum) {
-		signaled = true;
-	};
+	shm_synced = segment->allocate(sizeof(bool));
+	*static_cast<bool *>(shm_synced) = false;
+	handle = segment->get_handle_from_address(shm_synced);
 
-	if (!sigusr1_handler_installed) {
-		action.sa_handler = sigusr1_handler;
-		sigemptyset(&action.sa_mask);
-		action.sa_flags = 0;
-		if (sigaction(SIGUSR1, &action, nullptr) == -1)
-			error("sigaction() failed (" + std::string(strerror(errno)) + ")");
-
-		sigusr1_handler_installed = true;
-	}
-
-	signaled = false;
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_fsync, pid, fd, 0, 0, 0));
-	while (!signaled);
+	mq->issue(message(SYS_fsync, pid, fd, 0, 0, handle));
+	while (!(*static_cast<bool *>(shm_synced)));
+
+	segment->deallocate(shm_synced);
 
 	*result = 0;
 	return 0;

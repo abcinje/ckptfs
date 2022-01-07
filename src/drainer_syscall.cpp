@@ -119,6 +119,7 @@ void drainer::pwrite(const message &msg)
 
 void drainer::fsync(const message &msg)
 {
+	void *shm_synced;
 	int pfs_fd;
 
 	auto it = fmap.find({msg.pid, msg.fd});
@@ -131,6 +132,6 @@ void drainer::fsync(const message &msg)
 	if (::fsync(pfs_fd) == -1)
 		throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 
-	if (::kill(msg.pid, SIGUSR1) == -1)
-		throw std::runtime_error("kill() failed (" + std::string(strerror(errno)) + ")");
+	shm_synced = segment->get_address_from_handle(msg.handle);
+	*static_cast<bool *>(shm_synced) = true;
 }
