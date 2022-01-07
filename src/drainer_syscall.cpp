@@ -30,7 +30,7 @@ namespace std
 
 static std::unordered_map<std::pair<pid_t, int>, std::pair<int, int>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd)
 
-void drainer::write(const message &msg)
+static void do_write(const message &msg)
 {
 	int bb_fd, pfs_fd;
 	off_t offset;
@@ -40,7 +40,7 @@ void drainer::write(const message &msg)
 		bb_fd = it->second.first;
 		pfs_fd = it->second.second;
 	} else {
-		throw std::logic_error("drainer::write() failed (no such key)");
+		throw std::logic_error("no such key");
 	}
 
 	offset = msg.offset;
@@ -50,6 +50,15 @@ void drainer::write(const message &msg)
 	offset = msg.offset;
 	if (::splice(pipefd[0], nullptr, pfs_fd, &offset, msg.len, SPLICE_F_MOVE) == -1)
 		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+}
+
+void drainer::write(const message &msg)
+{
+	try {
+		do_write(msg);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::write() failed (" + std::string(e.what()) + ")");
+	}
 }
 
 void drainer::open(const message &msg)
@@ -97,24 +106,11 @@ void drainer::close(const message &msg)
 
 void drainer::pwrite(const message &msg)
 {
-	int bb_fd, pfs_fd;
-	off_t offset;
-
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		bb_fd = it->second.first;
-		pfs_fd = it->second.second;
-	} else {
-		throw std::logic_error("drainer::pwrite() failed (no such key)");
+	try {
+		do_write(msg);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::pwrite() failed (" + std::string(e.what()) + ")");
 	}
-
-	offset = msg.offset;
-	if (::splice(bb_fd, &offset, pipefd[1], nullptr, msg.len, SPLICE_F_MOVE) == -1)
-		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
-
-	offset = msg.offset;
-	if (::splice(pipefd[0], nullptr, pfs_fd, &offset, msg.len, SPLICE_F_MOVE) == -1)
-		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
 }
 
 void drainer::fsync(const message &msg)
