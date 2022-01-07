@@ -97,7 +97,7 @@ int ckpt::close(int fd, int *result)
 	fmap.erase(it);
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
-		error("close() failed");
+		error("close() failed (" + std::string(strerror(errno)) + ")");
 
 	*result = 0;
 	return 0;
