@@ -4,7 +4,7 @@
 #include <mutex>
 #include <semaphore>
 
-template <typename T, size_t capacity = 256>
+template <typename T, size_t capacity = 1024>
 class queue {
 private:
 	T buffer[capacity];

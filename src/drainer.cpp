@@ -113,7 +113,7 @@ int main(void)
 {
 	init_path();
 
-	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 30);
+	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 20);
 	mq = segment->construct<message_queue>("q")();
 
 	install_sigint_handler();
