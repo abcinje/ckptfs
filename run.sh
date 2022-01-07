@@ -17,6 +17,11 @@ repos_root="$(dirname $0)"
 
 if [ ! -e "/dev/shm/ckptfs" ]; then
   "$repos_root/build/bin/drainer" &
+  drainer_pid="$!"
 fi
 
 LD_PRELOAD="$repos_root/build/lib/libckpt.so" "$@"
+
+if [ "$drainer_pid" ]; then
+  kill -SIGINT "$drainer_pid"
+fi
