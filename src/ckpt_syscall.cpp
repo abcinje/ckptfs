@@ -1,7 +1,5 @@
 #include <cerrno>
-#include <csignal>
 #include <cstring>
-#include <functional>
 #include <string>
 #include <unordered_map>
 
