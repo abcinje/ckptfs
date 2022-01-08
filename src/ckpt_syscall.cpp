@@ -25,6 +25,18 @@ extern message_queue *mq;
 
 static std::unordered_map<int, off_t> fmap; // fmap: fd -> offset
 
+int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
+{
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		/* TODO */
+		*result = -ENOTSUP;
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 {
 	pid_t pid;
@@ -129,6 +141,18 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 	*file_offset = *result;
 
 	return 0;
+}
+
+int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
+{
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		/* TODO */
+		*result = -ENOTSUP;
+		return 0;
+	} else {
+		return 1;
+	}
 }
 
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
