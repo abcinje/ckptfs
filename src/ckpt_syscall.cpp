@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <climits>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -54,10 +55,17 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	pid_t pid;
 	int fd;
 
-	if (pathname[0] != '/')
-		error("ckpt::open() failed (only absolute paths are supported)");
+	std::string abspath;
+	if (pathname[0] != '/') {
+		char cwd[PATH_MAX];
+		if (!syscall_no_intercept(SYS_getcwd, cwd, PATH_MAX))
+			error("getcwd() failed (" + std::string(strerror(errno)) + ")");
+		abspath = std::string(cwd) + '/' + std::string(pathname);
+	} else {
+		abspath = std::string(pathname);
+	}
 
-	std::string ckpt_file(pathname);
+	std::string ckpt_file(resolve_abspath(abspath));
 	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
 		return 1;
 
@@ -70,8 +78,8 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	if ((fd = syscall_no_intercept(SYS_open, bb_file.c_str(), flags, mode)) == -1)
 		error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	shm_pathname = segment->allocate(strlen(pathname) + 1);
-	std::memcpy(shm_pathname, pathname, strlen(pathname) + 1);
+	shm_pathname = segment->allocate(ckpt_file.size() + 1);
+	std::memcpy(shm_pathname, ckpt_file.data(), ckpt_file.size() + 1);
 	handle = segment->get_handle_from_address(shm_pathname);
 
 	pid = syscall_no_intercept(SYS_getpid);
@@ -177,7 +185,7 @@ int ckpt::openat(int dirfd, const char *pathname, int flags, mode_t mode, int *r
 			error("readlink() failed (" + std::string(strerror(errno)) + ")");
 		dirpath[dirpath_len] != '\0';
 
-		file = std::string(dirpath) + '/' + std::string(pathname);
+		file = resolve_abspath(std::string(dirpath) + '/' + std::string(pathname));
 		pathname = file.c_str();
 	}
 
