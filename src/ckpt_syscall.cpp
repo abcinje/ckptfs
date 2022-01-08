@@ -1,4 +1,5 @@
 #include <cerrno>
+#include <climits>
 #include <cstring>
 #include <string>
 #include <unordered_map>
@@ -163,8 +164,22 @@ int ckpt::fsync(int fd, int *result)
 
 int ckpt::openat(int dirfd, const char *pathname, int flags, mode_t mode, int *result)
 {
-	if (dirfd != AT_FDCWD)
-		error("ckpt::openat() failed (only operations for the current working directory are supported)");
+	std::string file;
+
+	if (dirfd != AT_FDCWD && pathname[0] != '/') {
+		char dirpath[PATH_MAX + 1];
+		ssize_t dirpath_len;
+		
+		pid_t pid = syscall_no_intercept(SYS_getpid);
+		std::string symlink("/proc/" + std::to_string(pid) + "/fd/" + std::to_string(dirfd));
+
+		if ((dirpath_len = syscall_no_intercept(SYS_readlink, symlink.c_str(), dirpath, PATH_MAX)) == -1)
+			error("readlink() failed (" + std::string(strerror(errno)) + ")");
+		dirpath[dirpath_len] != '\0';
+
+		file = std::string(dirpath) + '/' + std::string(pathname);
+		pathname = file.c_str();
+	}
 
 	return open(pathname, flags, mode, result);
 }
