@@ -54,6 +54,10 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::fsync((int)arg0, (int *)result);
 		case SYS_openat:
 			return ckpt::openat((int)arg0, (const char *)arg1, (int)arg2, (mode_t)arg3, (int *)result);
+		case SYS_stat:
+		case SYS_fstat:
+		case SYS_lstat:
+		case SYS_newfstatat:
 		case SYS_preadv:
 		case SYS_pwritev:
 		case SYS_preadv2:
