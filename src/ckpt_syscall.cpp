@@ -171,6 +171,41 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	return 0;
 }
 
+int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
+{
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		/* TODO */
+		*result = -ENOTSUP;
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
+int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
+{
+	pid_t pid;
+	off_t *offset;
+
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		offset = &it->second;
+	} else {
+		return 1;
+	}
+
+	if ((*result = syscall_no_intercept(SYS_writev, fd, iov, iovcnt)) == -1)
+		error("writev() failed (" + std::string(strerror(errno)) + ")");
+
+	pid = syscall_no_intercept(SYS_getpid);
+	mq->issue(message(SYS_writev, pid, fd, *offset, *result, 0));
+
+	*offset += *result;
+
+	return 0;
+}
+
 int ckpt::fsync(int fd, int *result)
 {
 	void *shm_synced;

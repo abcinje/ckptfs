@@ -46,12 +46,14 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::pread((int)arg0, (void *)arg1, (size_t)arg2, (off_t)arg3, (ssize_t *)result);
 		case SYS_pwrite64:
 			return ckpt::pwrite((int)arg0, (const void *)arg1, (size_t)arg2, (off_t)arg3, (ssize_t *)result);
+		case SYS_readv:
+			return ckpt::readv((int)arg0, (const struct iovec *)arg1, (int)arg2, (ssize_t *)result);
+		case SYS_writev:
+			return ckpt::writev((int)arg0, (const struct iovec *)arg1, (int)arg2, (ssize_t *)result);
 		case SYS_fsync:
 			return ckpt::fsync((int)arg0, (int *)result);
 		case SYS_openat:
 			return ckpt::openat((int)arg0, (const char *)arg1, (int)arg2, (mode_t)arg3, (int *)result);
-		case SYS_readv:
-		case SYS_writev:
 		case SYS_preadv:
 		case SYS_pwritev:
 		case SYS_preadv2:

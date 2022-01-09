@@ -116,6 +116,15 @@ void drainer::pwrite(const message &msg)
 	}
 }
 
+void drainer::writev(const message &msg)
+{
+	try {
+		do_write(msg);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::writev() failed (" + std::string(e.what()) + ")");
+	}
+}
+
 void drainer::fsync(const message &msg)
 {
 	void *shm_synced;
