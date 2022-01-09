@@ -52,6 +52,10 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::openat((int)arg0, (const char *)arg1, (int)arg2, (mode_t)arg3, (int *)result);
 		case SYS_readv:
 		case SYS_writev:
+		case SYS_preadv:
+		case SYS_pwritev:
+		case SYS_preadv2:
+		case SYS_pwritev2:
 			*result = -ENOTSUP;
 			return 0;
 		default:
