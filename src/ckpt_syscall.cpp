@@ -2,6 +2,7 @@
 #include <climits>
 #include <cstdlib>
 #include <cstring>
+#include <semaphore>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -328,13 +329,13 @@ int ckpt::fsync(int fd, int *result)
 	if (fmap.find(fd) == fmap.end())
 		return 1;
 
-	shm_synced = segment->allocate(sizeof(bool));
-	*static_cast<bool *>(shm_synced) = false;
+	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
+	new (shm_synced) std::binary_semaphore(0);
 	handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_fsync, pid, fd, 0, 0, handle));
-	while (!(*static_cast<bool *>(shm_synced)));
+	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
 
 	segment->deallocate(shm_synced);
 

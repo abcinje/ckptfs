@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <cstring>
+#include <semaphore>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -147,5 +148,5 @@ void drainer::fsync(const message &msg)
 		throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 
 	shm_synced = segment->get_address_from_handle(msg.handle);
-	*static_cast<bool *>(shm_synced) = true;
+	(static_cast<std::binary_semaphore *>(shm_synced))->release();
 }
