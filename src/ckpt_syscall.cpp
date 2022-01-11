@@ -3,8 +3,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <tuple>
 #include <unordered_map>
-#include <utility>
 
 #include <fcntl.h>
 #include <syscall.h>
@@ -24,7 +24,7 @@ extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 extern message_queue *mq;
 
-static std::unordered_map<int, std::pair<int, off_t>> fmap; // fmap: bb_fd -> (pfs_fd, offset)
+static std::unordered_map<int, std::tuple<int, off_t, off_t>> fmap; // fmap: bb_fd -> (pfs_fd, offset, len)
 
 
 
@@ -47,11 +47,14 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 {
 	pid_t pid;
-	off_t *offset;
+	int pfs_fd;
+	off_t *offset, *len;
 
 	auto it = fmap.find(fd);
 	if (it != fmap.end()) {
-		offset = &it->second.second;
+		pfs_fd = std::get<0>(it->second);
+		offset = &std::get<1>(it->second);
+		len = &std::get<2>(it->second);
 	} else {
 		return 1;
 	}
@@ -63,6 +66,11 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	mq->issue(message(SYS_write, pid, fd, *offset, *result, 0));
 
 	*offset += *result;
+	if (*len < *offset) {
+		if (syscall_no_intercept(SYS_fallocate, pfs_fd, 0, *offset) == -1)
+			error("fallocate() failed (" + std::string(strerror(errno)) + ")");
+		*len = *offset;
+	}
 
 	return 0;
 }
@@ -73,6 +81,8 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	shm_handle handle;
 	pid_t pid;
 	int bb_fd, pfs_fd;
+	struct stat statbuf;
+	off_t len;
 
 	std::string abspath;
 	if (pathname[0] != '/') {
@@ -108,7 +118,11 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_open, pid, bb_fd, 0, 0, handle));
 
-	if (!fmap.insert({bb_fd, {pfs_fd, 0}}).second)
+	if (syscall_no_intercept(SYS_fstat, pfs_file.c_str(), &statbuf) == -1)
+		error("fstat() failed (" + std::string(strerror(errno)) + ")");
+	len = statbuf.st_size;
+
+	if (!fmap.insert({bb_fd, {pfs_fd, 0, len}}).second)
 		error("ckpt::open() failed (the same key already exists)");
 
 	*result = bb_fd;
@@ -135,13 +149,55 @@ int ckpt::close(int fd, int *result)
 	return 0;
 }
 
+int ckpt::stat(const char *pathname, struct stat *statbuf, int *result)
+{
+	std::string abspath;
+	if (pathname[0] != '/') {
+		char cwd[PATH_MAX];
+		if (!syscall_no_intercept(SYS_getcwd, cwd, PATH_MAX))
+			error("getcwd() failed (" + std::string(strerror(errno)) + ")");
+		abspath = std::string(cwd) + '/' + std::string(pathname);
+	} else {
+		abspath = std::string(pathname);
+	}
+
+	std::string ckpt_file(resolve_abspath(abspath));
+	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
+		return 1;
+
+	std::string file(ckpt_file.substr(ckpt_dir->size()));
+	std::string pfs_file(*pfs_dir + file);
+
+	if ((*result = syscall_no_intercept(SYS_stat, pfs_file.c_str(), statbuf)) == -1)
+		error("stat() failed (" + std::string(strerror(errno)) + ")");
+
+	return 0;
+}
+
+int ckpt::fstat(int fd, struct stat *statbuf, int *result)
+{
+	int pfs_fd;
+
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		pfs_fd = std::get<0>(it->second);
+	} else {
+		return 1;
+	}
+
+	if ((*result = syscall_no_intercept(SYS_fstat, pfs_fd, statbuf)) == -1)
+		error("fstat() failed (" + std::string(strerror(errno)) + ")");
+
+	return 0;
+}
+
 int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 {
 	off_t *file_offset;
 
 	auto it = fmap.find(fd);
 	if (it != fmap.end()) {
-		file_offset = &it->second.second;
+		file_offset = &std::get<1>(it->second);
 	} else {
 		return 1;
 	}
@@ -169,15 +225,28 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	pid_t pid;
+	int pfs_fd;
+	off_t *len;
 
-	if (fmap.find(fd) == fmap.end())
+	auto it = fmap.find(fd);
+	if (it != fmap.end()) {
+		pfs_fd = std::get<0>(it->second);
+		len = &std::get<2>(it->second);
+	} else {
 		return 1;
+	}
 
 	if ((*result = syscall_no_intercept(SYS_pwrite64, fd, buf, count, offset)) == -1)
 		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_pwrite64, pid, fd, offset, *result, 0));
+
+	if (*len < offset + *result) {
+		if (syscall_no_intercept(SYS_fallocate, pfs_fd, 0, offset + *result) == -1)
+			error("fallocate() failed (" + std::string(strerror(errno)) + ")");
+		*len = offset + *result;
+	}
 
 	return 0;
 }
@@ -197,11 +266,14 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
 	pid_t pid;
-	off_t *offset;
+	int pfs_fd;
+	off_t *offset, *len;
 
 	auto it = fmap.find(fd);
 	if (it != fmap.end()) {
-		offset = &it->second.second;
+		pfs_fd = std::get<0>(it->second);
+		offset = &std::get<1>(it->second);
+		len = &std::get<2>(it->second);
 	} else {
 		return 1;
 	}
@@ -213,6 +285,11 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	mq->issue(message(SYS_writev, pid, fd, *offset, *result, 0));
 
 	*offset += *result;
+	if (*len < *offset) {
+		if (syscall_no_intercept(SYS_fallocate, pfs_fd, 0, *offset) == -1)
+			error("fallocate() failed (" + std::string(strerror(errno)) + ")");
+		*len = *offset;
+	}
 
 	return 0;
 }
@@ -260,4 +337,29 @@ int ckpt::openat(int dirfd, const char *pathname, int flags, mode_t mode, int *r
 	}
 
 	return open(pathname, flags, mode, result);
+}
+
+int ckpt::fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags, int *result)
+{
+	std::string file;
+
+	if (flags)
+		error("ckpt::fstatat() failed (nonzero flags are unsupported)");
+
+	if (dirfd != AT_FDCWD && pathname[0] != '/') {
+		char dirpath[PATH_MAX];
+		ssize_t dirpath_len;
+
+		pid_t pid = syscall_no_intercept(SYS_getpid);
+		std::string symlink("/proc/" + std::to_string(pid) + "/fd/" + std::to_string(dirfd));
+
+		if ((dirpath_len = syscall_no_intercept(SYS_readlink, symlink.c_str(), dirpath, PATH_MAX - 1)) == -1)
+			error("readlink() failed (" + std::string(strerror(errno)) + ")");
+		dirpath[dirpath_len] != '\0';
+
+		file = resolve_abspath(std::string(dirpath) + '/' + std::string(pathname));
+		pathname = file.c_str();
+	}
+
+	return stat(pathname, statbuf, result);
 }
