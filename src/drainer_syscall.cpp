@@ -79,7 +79,7 @@ void drainer::open(const message &msg)
 	if ((bb_fd = ::open(bb_file.c_str(), O_RDONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY | O_CREAT, 0664)) == -1)
+	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd}}).second)
