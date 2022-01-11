@@ -26,6 +26,12 @@ extern message_queue *mq;
 
 static std::unordered_map<int, std::pair<int, off_t>> fmap; // fmap: bb_fd -> (pfs_fd, offset)
 
+
+
+/*******************
+ * => Syscalls
+ *******************/
+
 int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 {
 	auto it = fmap.find(fd);

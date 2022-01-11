@@ -52,6 +52,12 @@ static void do_write(const message &msg)
 		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
 }
 
+
+
+/*******************
+ * => Syscalls
+ *******************/
+
 void drainer::write(const message &msg)
 {
 	try {
