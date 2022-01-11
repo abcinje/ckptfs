@@ -3,7 +3,6 @@
 #include <cstring>
 #include <string>
 
-#include <seccomp.h>
 #include <syscall.h>
 
 #include <boost/interprocess/managed_shared_memory.hpp>
@@ -25,12 +24,6 @@ message_queue *mq;
 
 static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result)
 {
-#ifdef DEBUG
-	char *syscall_name = seccomp_syscall_resolve_num_arch(SCMP_ARCH_NATIVE, syscall_number);
-	print(syscall_name);
-	free(syscall_name);
-#endif
-
 	switch (syscall_number) {
 		case SYS_read:
 			return ckpt::read((int)arg0, (void *)arg1, (size_t)arg2, (ssize_t *)result);
