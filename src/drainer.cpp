@@ -37,6 +37,9 @@ static void do_drain(void)
 		sigprocmask(SIG_BLOCK, &sigmask, &prev_sigmask);
 
 		switch (msg.syscall) {
+			case SYS_read:
+				drainer::read(msg);
+				break;
 			case SYS_write:
 				drainer::write(msg);
 				break;
@@ -46,8 +49,14 @@ static void do_drain(void)
 			case SYS_close:
 				drainer::close(msg);
 				break;
+			case SYS_pread64:
+				drainer::pread(msg);
+				break;
 			case SYS_pwrite64:
 				drainer::pwrite(msg);
+				break;
+			case SYS_readv:
+				drainer::readv(msg);
 				break;
 			case SYS_writev:
 				drainer::writev(msg);

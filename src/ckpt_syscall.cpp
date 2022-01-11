@@ -35,14 +35,36 @@ static std::unordered_map<int, std::tuple<int, off_t, off_t>> fmap; // fmap: bb_
 
 int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 {
+	void *shm_synced;
+	shm_handle handle;
+	pid_t pid;
+	int pfs_fd;
+	off_t *offset;
+
 	auto it = fmap.find(fd);
 	if (it != fmap.end()) {
-		/* TODO */
-		*result = -ENOTSUP;
-		return 0;
+		pfs_fd = std::get<0>(it->second);
+		offset = &std::get<1>(it->second);
 	} else {
 		return 1;
 	}
+
+	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
+	new (shm_synced) std::binary_semaphore(0);
+	handle = segment->get_handle_from_address(shm_synced);
+
+	pid = syscall_no_intercept(SYS_getpid);
+	mq->issue(message(SYS_read, pid, fd, 0, 0, handle));
+	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+
+	segment->deallocate(shm_synced);
+
+	if ((*result = syscall_no_intercept(SYS_read, pfs_fd, buf, count)) == -1)
+		error("read() failed (" + std::string(strerror(errno)) + ")");
+
+	*offset += *result;
+
+	return 0;
 }
 
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
@@ -238,14 +260,32 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 
 int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 {
+	void *shm_synced;
+	shm_handle handle;
+	pid_t pid;
+	int pfs_fd;
+
 	auto it = fmap.find(fd);
 	if (it != fmap.end()) {
-		/* TODO */
-		*result = -ENOTSUP;
-		return 0;
+		pfs_fd = std::get<0>(it->second);
 	} else {
 		return 1;
 	}
+
+	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
+	new (shm_synced) std::binary_semaphore(0);
+	handle = segment->get_handle_from_address(shm_synced);
+
+	pid = syscall_no_intercept(SYS_getpid);
+	mq->issue(message(SYS_pread64, pid, fd, 0, 0, handle));
+	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+
+	segment->deallocate(shm_synced);
+
+	if ((*result = syscall_no_intercept(SYS_pread64, pfs_fd, buf, count, offset)) == -1)
+		error("pread() failed (" + std::string(strerror(errno)) + ")");
+
+	return 0;
 }
 
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
@@ -280,14 +320,36 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
+	void *shm_synced;
+	shm_handle handle;
+	pid_t pid;
+	int pfs_fd;
+	off_t *offset;
+
 	auto it = fmap.find(fd);
 	if (it != fmap.end()) {
-		/* TODO */
-		*result = -ENOTSUP;
-		return 0;
+		pfs_fd = std::get<0>(it->second);
+		offset = &std::get<1>(it->second);
 	} else {
 		return 1;
 	}
+
+	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
+	new (shm_synced) std::binary_semaphore(0);
+	handle = segment->get_handle_from_address(shm_synced);
+
+	pid = syscall_no_intercept(SYS_getpid);
+	mq->issue(message(SYS_readv, pid, fd, 0, 0, handle));
+	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+
+	segment->deallocate(shm_synced);
+
+	if ((*result = syscall_no_intercept(SYS_readv, pfs_fd, iov, iovcnt)) == -1)
+		error("readv() failed (" + std::string(strerror(errno)) + ")");
+
+	*offset += *result;
+
+	return 0;
 }
 
 int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
