@@ -68,8 +68,8 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 	*offset += *result;
 	if (*len < *offset) {
-		if (syscall_no_intercept(SYS_fallocate, pfs_fd, 0, *offset) == -1)
-			error("fallocate() failed (" + std::string(strerror(errno)) + ")");
+		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, *offset) == -1)
+			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
 		*len = *offset;
 	}
 
@@ -268,10 +268,11 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_pwrite64, pid, fd, offset, *result, 0));
 
-	if (*len < offset + *result) {
-		if (syscall_no_intercept(SYS_fallocate, pfs_fd, 0, offset + *result) == -1)
-			error("fallocate() failed (" + std::string(strerror(errno)) + ")");
-		*len = offset + *result;
+	offset += *result;
+	if (*len < offset) {
+		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, offset) == -1)
+			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
+		*len = offset;
 	}
 
 	return 0;
@@ -312,8 +313,8 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	*offset += *result;
 	if (*len < *offset) {
-		if (syscall_no_intercept(SYS_fallocate, pfs_fd, 0, *offset) == -1)
-			error("fallocate() failed (" + std::string(strerror(errno)) + ")");
+		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, *offset) == -1)
+			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
 		*len = *offset;
 	}
 
