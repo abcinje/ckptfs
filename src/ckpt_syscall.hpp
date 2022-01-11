@@ -11,6 +11,7 @@ namespace ckpt
 	int close(int fd, int *result);
 	int stat(const char *pathname, struct stat *statbuf, int *result);
 	int fstat(int fd, struct stat *statbuf, int *result);
+	int lstat(const char *pathname, struct stat *statbuf, int *result);
 	int lseek(int fd, off_t offset, int whence, off_t *result);
 	int pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result);
 	int pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result);

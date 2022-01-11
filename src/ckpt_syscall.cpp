@@ -191,6 +191,31 @@ int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 	return 0;
 }
 
+int ckpt::lstat(const char *pathname, struct stat *statbuf, int *result)
+{
+	std::string abspath;
+	if (pathname[0] != '/') {
+		char cwd[PATH_MAX];
+		if (!syscall_no_intercept(SYS_getcwd, cwd, PATH_MAX))
+			error("getcwd() failed (" + std::string(strerror(errno)) + ")");
+		abspath = std::string(cwd) + '/' + std::string(pathname);
+	} else {
+		abspath = std::string(pathname);
+	}
+
+	std::string ckpt_file(resolve_abspath(abspath));
+	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
+		return 1;
+
+	std::string file(ckpt_file.substr(ckpt_dir->size()));
+	std::string pfs_file(*pfs_dir + file);
+
+	if ((*result = syscall_no_intercept(SYS_lstat, pfs_file.c_str(), statbuf)) == -1)
+		error("lstat() failed (" + std::string(strerror(errno)) + ")");
+
+	return 0;
+}
+
 int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 {
 	off_t *file_offset;

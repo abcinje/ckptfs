@@ -44,6 +44,8 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::stat((const char *)arg0, (struct stat *)arg1, (int *)result);
 		case SYS_fstat:
 			return ckpt::fstat((int)arg0, (struct stat *)arg1, (int *)result);
+		case SYS_lstat:
+			return ckpt::lstat((const char *)arg0, (struct stat *)arg1, (int *)result);
 		case SYS_lseek:
 			return ckpt::lseek((int)arg0, (off_t)arg1, (int)arg2, (off_t *)result);
 		case SYS_pread64:
@@ -60,7 +62,8 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::openat((int)arg0, (const char *)arg1, (int)arg2, (mode_t)arg3, (int *)result);
 		case SYS_newfstatat:
 			return ckpt::fstatat((int)arg0, (const char *)arg1, (struct stat *)arg2, (int)arg3, (int *)result);
-		case SYS_lstat:
+		case SYS_symlink:
+		case SYS_symlinkat:
 		case SYS_preadv:
 		case SYS_pwritev:
 		case SYS_preadv2:
