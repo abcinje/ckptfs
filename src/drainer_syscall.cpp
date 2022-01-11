@@ -53,13 +53,7 @@ static void do_write(const message &msg)
 		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
 }
 
-
-
-/*******************
- * => Syscalls
- *******************/
-
-void drainer::read(const message &msg)
+static void do_fsync(const message &msg, bool data_only)
 {
 	void *shm_synced;
 	int pfs_fd;
@@ -68,14 +62,34 @@ void drainer::read(const message &msg)
 	if (it != fmap.end()) {
 		pfs_fd = it->second.second;
 	} else {
-		throw std::logic_error("drainer::read() failed (no such key)");
+		throw std::logic_error("no such key");
 	}
 
-	if (::fdatasync(pfs_fd) == -1)
-		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
+	if (data_only) {
+		if (::fdatasync(pfs_fd) == -1)
+			throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
+	} else {
+		if (::fsync(pfs_fd) == -1)
+			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+	}
 
 	shm_synced = segment->get_address_from_handle(msg.handle);
 	(static_cast<std::binary_semaphore *>(shm_synced))->release();
+}
+
+
+
+/*******************
+ * => Syscalls
+ *******************/
+
+void drainer::read(const message &msg)
+{
+	try {
+		do_fsync(msg, true);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::read() failed (" + std::string(e.what()) + ")");
+	}
 }
 
 void drainer::write(const message &msg)
@@ -135,21 +149,11 @@ void drainer::close(const message &msg)
 
 void drainer::pread(const message &msg)
 {
-	void *shm_synced;
-	int pfs_fd;
-
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		pfs_fd = it->second.second;
-	} else {
-		throw std::logic_error("drainer::pread() failed (no such key)");
+	try {
+		do_fsync(msg, true);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::pread() failed (" + std::string(e.what()) + ")");
 	}
-
-	if (::fdatasync(pfs_fd) == -1)
-		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
-
-	shm_synced = segment->get_address_from_handle(msg.handle);
-	(static_cast<std::binary_semaphore *>(shm_synced))->release();
 }
 
 void drainer::pwrite(const message &msg)
@@ -163,21 +167,11 @@ void drainer::pwrite(const message &msg)
 
 void drainer::readv(const message &msg)
 {
-	void *shm_synced;
-	int pfs_fd;
-
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		pfs_fd = it->second.second;
-	} else {
-		throw std::logic_error("drainer::readv() failed (no such key)");
+	try {
+		do_fsync(msg, true);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::readv() failed (" + std::string(e.what()) + ")");
 	}
-
-	if (::fdatasync(pfs_fd) == -1)
-		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
-
-	shm_synced = segment->get_address_from_handle(msg.handle);
-	(static_cast<std::binary_semaphore *>(shm_synced))->release();
 }
 
 void drainer::writev(const message &msg)
@@ -191,38 +185,18 @@ void drainer::writev(const message &msg)
 
 void drainer::fsync(const message &msg)
 {
-	void *shm_synced;
-	int pfs_fd;
-
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		pfs_fd = it->second.second;
-	} else {
-		throw std::logic_error("drainer::fsync() failed (no such key)");
+	try {
+		do_fsync(msg, false);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::fsync() failed (" + std::string(e.what()) + ")");
 	}
-
-	if (::fsync(pfs_fd) == -1)
-		throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
-
-	shm_synced = segment->get_address_from_handle(msg.handle);
-	(static_cast<std::binary_semaphore *>(shm_synced))->release();
 }
 
 void drainer::fdatasync(const message &msg)
 {
-	void *shm_synced;
-	int pfs_fd;
-
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		pfs_fd = it->second.second;
-	} else {
-		throw std::logic_error("drainer::fdatasync() failed (no such key)");
+	try {
+		do_fsync(msg, true);
+	} catch (std::logic_error &e) {
+		throw std::logic_error("drainer::fdatasync() failed (" + std::string(e.what()) + ")");
 	}
-
-	if (::fdatasync(pfs_fd) == -1)
-		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
-
-	shm_synced = segment->get_address_from_handle(msg.handle);
-	(static_cast<std::binary_semaphore *>(shm_synced))->release();
 }
