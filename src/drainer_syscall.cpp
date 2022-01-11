@@ -150,3 +150,22 @@ void drainer::fsync(const message &msg)
 	shm_synced = segment->get_address_from_handle(msg.handle);
 	(static_cast<std::binary_semaphore *>(shm_synced))->release();
 }
+
+void drainer::fdatasync(const message &msg)
+{
+	void *shm_synced;
+	int pfs_fd;
+
+	auto it = fmap.find({msg.pid, msg.fd});
+	if (it != fmap.end()) {
+		pfs_fd = it->second.second;
+	} else {
+		throw std::logic_error("drainer::fdatasync() failed (no such key)");
+	}
+
+	if (::fdatasync(pfs_fd) == -1)
+		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
+
+	shm_synced = segment->get_address_from_handle(msg.handle);
+	(static_cast<std::binary_semaphore *>(shm_synced))->release();
+}

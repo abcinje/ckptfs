@@ -11,6 +11,7 @@ namespace drainer
 	void pwrite(const message &msg);
 	void writev(const message &msg);
 	void fsync(const message &msg);
+	void fdatasync(const message &msg);
 }
 
 #endif //CKPTFS_DRAINER_SYSCALL_HPP

@@ -51,6 +51,8 @@ static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3,
 			return ckpt::writev((int)arg0, (const struct iovec *)arg1, (int)arg2, (ssize_t *)result);
 		case SYS_fsync:
 			return ckpt::fsync((int)arg0, (int *)result);
+		case SYS_fdatasync:
+			return ckpt::fdatasync((int)arg0, (int *)result);
 		case SYS_openat:
 			return ckpt::openat((int)arg0, (const char *)arg1, (int)arg2, (mode_t)arg3, (int *)result);
 		case SYS_newfstatat:

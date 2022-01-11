@@ -18,6 +18,7 @@ namespace ckpt
 	int readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result);
 	int writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result);
 	int fsync(int fd, int *result);
+	int fdatasync(int fd, int *result);
 	int openat(int dirfd, const char *pathname, int flags, mode_t mode, int *result);
 	int fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags, int *result);
 }

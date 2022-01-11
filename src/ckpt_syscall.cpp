@@ -344,6 +344,29 @@ int ckpt::fsync(int fd, int *result)
 	return 0;
 }
 
+int ckpt::fdatasync(int fd, int *result)
+{
+	void *shm_synced;
+	shm_handle handle;
+	pid_t pid;
+
+	if (fmap.find(fd) == fmap.end())
+		return 1;
+
+	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
+	new (shm_synced) std::binary_semaphore(0);
+	handle = segment->get_handle_from_address(shm_synced);
+
+	pid = syscall_no_intercept(SYS_getpid);
+	mq->issue(message(SYS_fdatasync, pid, fd, 0, 0, handle));
+	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+
+	segment->deallocate(shm_synced);
+
+	*result = 0;
+	return 0;
+}
+
 int ckpt::openat(int dirfd, const char *pathname, int flags, mode_t mode, int *result)
 {
 	std::string file;

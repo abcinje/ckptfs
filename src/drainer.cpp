@@ -55,6 +55,9 @@ static void do_drain(void)
 			case SYS_fsync:
 				drainer::fsync(msg);
 				break;
+			case SYS_fdatasync:
+				drainer::fdatasync(msg);
+				break;
 			default:
 				throw std::logic_error("do_drain() failed (invalid operation type)");
 		}
