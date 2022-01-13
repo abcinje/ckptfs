@@ -2,7 +2,9 @@
 #include <climits>
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
 #include <semaphore>
+#include <shared_mutex>
 #include <string>
 #include <tuple>
 #include <unordered_map>
@@ -25,6 +27,7 @@ extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 extern message_queue *mq;
 
+static std::shared_mutex fmap_mutex;
 static std::unordered_map<int, std::tuple<int, off_t, off_t>> fmap; // fmap: bb_fd -> (pfs_fd, offset, len)
 
 
@@ -41,12 +44,15 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	int pfs_fd;
 	off_t *offset;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-		offset = &std::get<1>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+			offset = &std::get<1>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
@@ -73,13 +79,16 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	int pfs_fd;
 	off_t *offset, *len;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-		offset = &std::get<1>(it->second);
-		len = &std::get<2>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+			offset = &std::get<1>(it->second);
+			len = &std::get<2>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	if ((*result = syscall_no_intercept(SYS_write, fd, buf, count)) == -1)
@@ -145,8 +154,11 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
 	len = statbuf.st_size;
 
-	if (!fmap.insert({bb_fd, {pfs_fd, 0, len}}).second)
-		error("ckpt::open() failed (the same key already exists)");
+	{
+		std::scoped_lock lock(fmap_mutex);
+		if (!fmap.insert({bb_fd, {pfs_fd, 0, len}}).second)
+			error("ckpt::open() failed (the same key already exists)");
+	}
 
 	*result = bb_fd;
 	return 0;
@@ -156,14 +168,18 @@ int ckpt::close(int fd, int *result)
 {
 	pid_t pid;
 
-	auto it = fmap.find(fd);
-	if (it == fmap.end())
-		return 1;
+	{
+		std::scoped_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			fmap.erase(it);
+		} else {
+			return 1;
+		}
+	}
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_close, pid, fd, 0, 0, 0));
-
-	fmap.erase(it);
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
 		error("close() failed (" + std::string(strerror(errno)) + ")");
@@ -201,11 +217,14 @@ int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 {
 	int pfs_fd;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	if ((*result = syscall_no_intercept(SYS_fstat, pfs_fd, statbuf)) == -1)
@@ -243,11 +262,14 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 {
 	off_t *file_offset;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		file_offset = &std::get<1>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			file_offset = &std::get<1>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	if ((*result = syscall_no_intercept(SYS_lseek, fd, offset, whence)) == -1)
@@ -265,11 +287,14 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	pid_t pid;
 	int pfs_fd;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
@@ -294,12 +319,15 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	int pfs_fd;
 	off_t *len;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-		len = &std::get<2>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+			len = &std::get<2>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	if ((*result = syscall_no_intercept(SYS_pwrite64, fd, buf, count, offset)) == -1)
@@ -326,12 +354,15 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	int pfs_fd;
 	off_t *offset;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-		offset = &std::get<1>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+			offset = &std::get<1>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
@@ -358,13 +389,16 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	int pfs_fd;
 	off_t *offset, *len;
 
-	auto it = fmap.find(fd);
-	if (it != fmap.end()) {
-		pfs_fd = std::get<0>(it->second);
-		offset = &std::get<1>(it->second);
-		len = &std::get<2>(it->second);
-	} else {
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<0>(it->second);
+			offset = &std::get<1>(it->second);
+			len = &std::get<2>(it->second);
+		} else {
+			return 1;
+		}
 	}
 
 	if ((*result = syscall_no_intercept(SYS_writev, fd, iov, iovcnt)) == -1)
@@ -389,8 +423,11 @@ int ckpt::fsync(int fd, int *result)
 	shm_handle handle;
 	pid_t pid;
 
-	if (fmap.find(fd) == fmap.end())
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		if (fmap.find(fd) == fmap.end())
+			return 1;
+	}
 
 	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
 	new (shm_synced) std::binary_semaphore(0);
@@ -412,8 +449,11 @@ int ckpt::fdatasync(int fd, int *result)
 	shm_handle handle;
 	pid_t pid;
 
-	if (fmap.find(fd) == fmap.end())
-		return 1;
+	{
+		std::shared_lock lock(fmap_mutex);
+		if (fmap.find(fd) == fmap.end())
+			return 1;
+	}
 
 	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
 	new (shm_synced) std::binary_semaphore(0);
