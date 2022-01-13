@@ -1,6 +1,5 @@
 #include <cerrno>
 #include <cstring>
-#include <semaphore>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -11,6 +10,10 @@
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include <boost/interprocess/sync/interprocess_semaphore.hpp>
+
+namespace bi = boost::interprocess;
 
 #include "drainer_syscall.hpp"
 
@@ -74,7 +77,7 @@ static void do_fsync(const message &msg, bool data_only)
 	}
 
 	shm_synced = segment->get_address_from_handle(msg.handle);
-	(static_cast<std::binary_semaphore *>(shm_synced))->release();
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 }
 
 

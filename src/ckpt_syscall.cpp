@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
-#include <semaphore>
 #include <shared_mutex>
 #include <string>
 #include <tuple>
@@ -13,6 +12,10 @@
 #include <syscall.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include <boost/interprocess/sync/interprocess_semaphore.hpp>
+
+namespace bi = boost::interprocess;
 
 #include <libsyscall_intercept_hook_point.h>
 
@@ -55,13 +58,13 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 		}
 	}
 
-	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
-	new (shm_synced) std::binary_semaphore(0);
+	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+	new (shm_synced) bi::interprocess_semaphore(0);
 	handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_read, pid, fd, 0, 0, handle));
-	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
 
@@ -297,13 +300,13 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 		}
 	}
 
-	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
-	new (shm_synced) std::binary_semaphore(0);
+	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+	new (shm_synced) bi::interprocess_semaphore(0);
 	handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_pread64, pid, fd, 0, 0, handle));
-	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
 
@@ -365,13 +368,13 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		}
 	}
 
-	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
-	new (shm_synced) std::binary_semaphore(0);
+	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+	new (shm_synced) bi::interprocess_semaphore(0);
 	handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_readv, pid, fd, 0, 0, handle));
-	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
 
@@ -429,13 +432,13 @@ int ckpt::fsync(int fd, int *result)
 			return 1;
 	}
 
-	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
-	new (shm_synced) std::binary_semaphore(0);
+	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+	new (shm_synced) bi::interprocess_semaphore(0);
 	handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_fsync, pid, fd, 0, 0, handle));
-	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
 
@@ -455,13 +458,13 @@ int ckpt::fdatasync(int fd, int *result)
 			return 1;
 	}
 
-	shm_synced = segment->allocate(sizeof(std::binary_semaphore));
-	new (shm_synced) std::binary_semaphore(0);
+	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+	new (shm_synced) bi::interprocess_semaphore(0);
 	handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_fdatasync, pid, fd, 0, 0, handle));
-	(static_cast<std::binary_semaphore *>(shm_synced))->acquire();
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
 
