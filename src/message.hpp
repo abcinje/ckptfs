@@ -19,7 +19,6 @@ public:
 
 	message(void);
 	message(long syscall, pid_t pid, int fd, off_t offset, size_t len, shm_handle handle);
-	message(const message &copy);
 };
 
 #endif //CKPTFS_MESSAGE_HPP
