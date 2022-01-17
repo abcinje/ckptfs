@@ -153,7 +153,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_open, pid, bb_fd, 0, 0, handle));
 
-	if (syscall_no_intercept(SYS_fstat, pfs_file.c_str(), &statbuf) == -1)
+	if (syscall_no_intercept(SYS_fstat, pfs_fd, &statbuf) == -1)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
 	len = statbuf.st_size;
 
