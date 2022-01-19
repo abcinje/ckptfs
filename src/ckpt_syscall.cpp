@@ -20,6 +20,7 @@ namespace bi = boost::interprocess;
 #include <libsyscall_intercept_hook_point.h>
 
 #include "ckpt_syscall.hpp"
+#include "config.hpp"
 #include "message.hpp"
 #include "queue.hpp"
 #include "util.hpp"
@@ -28,6 +29,7 @@ using message_queue = queue<message>;
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
+extern config *shm_cfg;
 extern message_queue *mq;
 
 static std::shared_mutex fmap_mutex;
@@ -426,21 +428,23 @@ int ckpt::fsync(int fd, int *result)
 	shm_handle handle;
 	pid_t pid;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		if (fmap.find(fd) == fmap.end())
-			return 1;
+	if (shm_cfg->fsync_enabled) {
+		{
+			std::shared_lock lock(fmap_mutex);
+			if (fmap.find(fd) == fmap.end())
+				return 1;
+		}
+
+		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+		new (shm_synced) bi::interprocess_semaphore(0);
+		handle = segment->get_handle_from_address(shm_synced);
+
+		pid = syscall_no_intercept(SYS_getpid);
+		mq->issue(message(SYS_fsync, pid, fd, 0, 0, handle));
+		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
+
+		segment->deallocate(shm_synced);
 	}
-
-	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
-	new (shm_synced) bi::interprocess_semaphore(0);
-	handle = segment->get_handle_from_address(shm_synced);
-
-	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_fsync, pid, fd, 0, 0, handle));
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
-
-	segment->deallocate(shm_synced);
 
 	*result = 0;
 	return 0;
@@ -452,21 +456,23 @@ int ckpt::fdatasync(int fd, int *result)
 	shm_handle handle;
 	pid_t pid;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		if (fmap.find(fd) == fmap.end())
-			return 1;
+	if (shm_cfg->fsync_enabled) {
+		{
+			std::shared_lock lock(fmap_mutex);
+			if (fmap.find(fd) == fmap.end())
+				return 1;
+		}
+
+		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+		new (shm_synced) bi::interprocess_semaphore(0);
+		handle = segment->get_handle_from_address(shm_synced);
+
+		pid = syscall_no_intercept(SYS_getpid);
+		mq->issue(message(SYS_fdatasync, pid, fd, 0, 0, handle));
+		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
+
+		segment->deallocate(shm_synced);
 	}
-
-	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
-	new (shm_synced) bi::interprocess_semaphore(0);
-	handle = segment->get_handle_from_address(shm_synced);
-
-	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_fdatasync, pid, fd, 0, 0, handle));
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
-
-	segment->deallocate(shm_synced);
 
 	*result = 0;
 	return 0;

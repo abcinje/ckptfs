@@ -12,6 +12,7 @@
 
 namespace bi = boost::interprocess;
 
+#include "config.hpp"
 #include "drainer_syscall.hpp"
 #include "message.hpp"
 #include "queue.hpp"
@@ -20,6 +21,7 @@ using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 bi::managed_shared_memory *segment;
+config *shm_cfg;
 int pipefd[2];
 
 static message_queue *mq;
@@ -109,6 +111,7 @@ static void install_sigint_handler(void)
 		std::cout << "Terminating." << std::endl;
 
 		segment->destroy<message_queue>("q");
+		segment->destroy<config>("cfg");
 		delete segment;
 		bi::shared_memory_object::remove("ckptfs");
 
@@ -124,11 +127,15 @@ static void install_sigint_handler(void)
 		throw std::runtime_error("sigaction() failed (" + std::string(strerror(errno)) + ")");
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
+	config cfg;
+	init_config(argc, argv, &cfg);
+
 	init_path();
 
 	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 20);
+	shm_cfg = segment->construct<config>("cfg")(cfg);
 	mq = segment->construct<message_queue>("q")();
 
 	install_sigint_handler();

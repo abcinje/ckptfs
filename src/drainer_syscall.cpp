@@ -15,10 +15,12 @@
 
 namespace bi = boost::interprocess;
 
+#include "config.hpp"
 #include "drainer_syscall.hpp"
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
+extern config *shm_cfg;
 extern int pipefd[2];
 
 namespace std
@@ -141,6 +143,10 @@ void drainer::close(const message &msg)
 		throw std::logic_error("drainer::close() failed (no such key)");
 	}
 
+	if (!shm_cfg->fsync_enabled)
+		if (::fsync(pfs_fd) == -1)
+			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+
 	fmap.erase(it);
 
 	if (::close(bb_fd) == -1)
@@ -188,6 +194,9 @@ void drainer::writev(const message &msg)
 
 void drainer::fsync(const message &msg)
 {
+	if (!shm_cfg->fsync_enabled)
+		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
+
 	try {
 		do_fsync(msg, false);
 	} catch (std::logic_error &e) {
@@ -197,6 +206,9 @@ void drainer::fsync(const message &msg)
 
 void drainer::fdatasync(const message &msg)
 {
+	if (!shm_cfg->fsync_enabled)
+		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
+
 	try {
 		do_fsync(msg, true);
 	} catch (std::logic_error &e) {

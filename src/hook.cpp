@@ -12,6 +12,7 @@ namespace bi = boost::interprocess;
 #include <libsyscall_intercept_hook_point.h>
 
 #include "ckpt_syscall.hpp"
+#include "config.hpp"
 #include "message.hpp"
 #include "queue.hpp"
 #include "util.hpp"
@@ -20,6 +21,7 @@ using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 bi::managed_shared_memory *segment;
+config *shm_cfg;
 message_queue *mq;
 
 static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result)
@@ -101,6 +103,7 @@ static __attribute__((constructor)) void init(void)
 	init_path();
 
 	segment = new bi::managed_shared_memory(bi::open_only, "ckptfs");
+	shm_cfg = segment->find<config>("cfg").first;
 	mq = segment->find<message_queue>("q").first;
 
 	intercept_hook_point = hook;
