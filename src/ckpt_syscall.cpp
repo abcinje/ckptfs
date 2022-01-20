@@ -486,9 +486,7 @@ int ckpt::openat(int dirfd, const char *pathname, int flags, mode_t mode, int *r
 		char dirpath[PATH_MAX];
 		ssize_t dirpath_len;
 		
-		pid_t pid = syscall_no_intercept(SYS_getpid);
-		std::string symlink("/proc/" + std::to_string(pid) + "/fd/" + std::to_string(dirfd));
-
+		std::string symlink("/proc/self/fd/" + std::to_string(dirfd));
 		if ((dirpath_len = syscall_no_intercept(SYS_readlink, symlink.c_str(), dirpath, PATH_MAX - 1)) == -1)
 			error("readlink() failed (" + std::string(strerror(errno)) + ")");
 		dirpath[dirpath_len] != '\0';
@@ -511,9 +509,7 @@ int ckpt::fstatat(int dirfd, const char *pathname, struct stat *statbuf, int fla
 		char dirpath[PATH_MAX];
 		ssize_t dirpath_len;
 
-		pid_t pid = syscall_no_intercept(SYS_getpid);
-		std::string symlink("/proc/" + std::to_string(pid) + "/fd/" + std::to_string(dirfd));
-
+		std::string symlink("/proc/self/fd/" + std::to_string(dirfd));
 		if ((dirpath_len = syscall_no_intercept(SYS_readlink, symlink.c_str(), dirpath, PATH_MAX - 1)) == -1)
 			error("readlink() failed (" + std::string(strerror(errno)) + ")");
 		dirpath[dirpath_len] != '\0';
