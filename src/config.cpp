@@ -4,7 +4,7 @@
 
 #include "config.hpp"
 
-config::config(void) : fsync_enabled(false)
+config::config(void) : lazy_fsync_enabled(false)
 {
 }
 
@@ -12,10 +12,10 @@ void init_config(int argc, char *argv[], config *cfg)
 {
 	int c;
 
-	while ((c = getopt(argc, argv, "s")) != -1) {
+	while ((c = getopt(argc, argv, "l")) != -1) {
 		switch (c) {
-			case 's':
-				cfg->fsync_enabled = true;
+			case 'l':
+				cfg->lazy_fsync_enabled = true;
 				break;
 			case '?':
 				exit(EXIT_FAILURE);

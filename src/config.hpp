@@ -2,7 +2,7 @@
 #define CKPTFS_CONFIG_HPP
 
 struct config {
-	bool fsync_enabled;
+	bool lazy_fsync_enabled;
 
 	config(void);
 };

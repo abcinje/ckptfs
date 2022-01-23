@@ -143,7 +143,7 @@ void drainer::close(const message &msg)
 		throw std::logic_error("drainer::close() failed (no such key)");
 	}
 
-	if (!shm_cfg->fsync_enabled)
+	if (shm_cfg->lazy_fsync_enabled)
 		if (::fsync(pfs_fd) == -1)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 
@@ -194,7 +194,7 @@ void drainer::writev(const message &msg)
 
 void drainer::fsync(const message &msg)
 {
-	if (!shm_cfg->fsync_enabled)
+	if (shm_cfg->lazy_fsync_enabled)
 		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
 
 	try {
@@ -206,7 +206,7 @@ void drainer::fsync(const message &msg)
 
 void drainer::fdatasync(const message &msg)
 {
-	if (!shm_cfg->fsync_enabled)
+	if (shm_cfg->lazy_fsync_enabled)
 		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
 	try {

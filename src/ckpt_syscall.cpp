@@ -428,7 +428,7 @@ int ckpt::fsync(int fd, int *result)
 	shm_handle handle;
 	pid_t pid;
 
-	if (shm_cfg->fsync_enabled) {
+	if (!shm_cfg->lazy_fsync_enabled) {
 		{
 			std::shared_lock lock(fmap_mutex);
 			if (fmap.find(fd) == fmap.end())
@@ -456,7 +456,7 @@ int ckpt::fdatasync(int fd, int *result)
 	shm_handle handle;
 	pid_t pid;
 
-	if (shm_cfg->fsync_enabled) {
+	if (!shm_cfg->lazy_fsync_enabled) {
 		{
 			std::shared_lock lock(fmap_mutex);
 			if (fmap.find(fd) == fmap.end())
