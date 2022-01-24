@@ -42,44 +42,6 @@ namespace std
 
 static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq)
 
-static void work(message_queue *fq)
-{
-	while (true) {
-		message msg(fq->dispatch());
-
-		switch (msg.syscall) {
-			case SYS_read:
-				drainer::read(msg);
-				break;
-			case SYS_write:
-				drainer::write(msg);
-				break;
-			case SYS_close:
-				drainer::close(msg);
-				return;
-			case SYS_pread64:
-				drainer::pread(msg);
-				break;
-			case SYS_pwrite64:
-				drainer::pwrite(msg);
-				break;
-			case SYS_readv:
-				drainer::readv(msg);
-				break;
-			case SYS_writev:
-				drainer::writev(msg);
-				break;
-			case SYS_fsync:
-				drainer::fsync(msg);
-				break;
-			case SYS_fdatasync:
-				drainer::fdatasync(msg);
-				break;
-			default:
-				throw std::logic_error("work() failed (invalid operation type)");
-		}
-	}
-}
 
 static void do_write(const message &msg)
 {
@@ -174,7 +136,7 @@ void drainer::open(const message &msg)
 	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	std::thread worker(work, static_cast<message_queue *>(shm_fq));
+	std::thread worker(drain, static_cast<message_queue *>(shm_fq), false);
 	worker.detach();
 
 	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq}}).second)
@@ -269,3 +231,55 @@ void drainer::fdatasync(const message &msg)
 		throw std::logic_error("drainer::fdatasync() failed (" + std::string(e.what()) + ")");
 	}
 }
+
+void drain(message_queue *q, bool main)
+{
+	if (main) {
+		while (true) {
+			message msg(q->dispatch());
+			switch (msg.syscall) {
+				case SYS_open:
+					drainer::open(msg);
+					break;
+				default:
+					throw std::logic_error("drain() failed (invalid operation type)");
+			}
+		}
+	} else {
+		while (true) {
+			message msg(q->dispatch());
+			switch (msg.syscall) {
+				case SYS_read:
+					drainer::read(msg);
+					break;
+				case SYS_write:
+					drainer::write(msg);
+					break;
+				case SYS_close:
+					drainer::close(msg);
+					return;
+				case SYS_pread64:
+					drainer::pread(msg);
+					break;
+				case SYS_pwrite64:
+					drainer::pwrite(msg);
+					break;
+				case SYS_readv:
+					drainer::readv(msg);
+					break;
+				case SYS_writev:
+					drainer::writev(msg);
+					break;
+				case SYS_fsync:
+					drainer::fsync(msg);
+					break;
+				case SYS_fdatasync:
+					drainer::fdatasync(msg);
+					break;
+				default:
+					throw std::logic_error("drain() failed (invalid operation type)");
+			}
+		}
+	}
+}
+

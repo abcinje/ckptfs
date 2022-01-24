@@ -1,39 +1,36 @@
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
-#include <stdexcept>
 #include <string>
-
-#include <syscall.h>
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 
 namespace bi = boost::interprocess;
 
+#include <libsyscall_intercept_hook_point.h>
+
+#include "ckpt_syscall.hpp"
 #include "config.hpp"
-#include "drainer_syscall.hpp"
 #include "message.hpp"
 #include "queue.hpp"
+#include "util.hpp"
 
 using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 bi::managed_shared_memory *segment;
 config *shm_cfg;
-int pipefd[2];
-
-static message_queue *mq;
+message_queue *mq;
 
 static void init_path(void)
 {
 	char *ckpt, *bb, *pfs;
 
 	if (!(ckpt = getenv("CKPT")) || !(bb = getenv("BB")) || !(pfs = getenv("PFS")))
-		throw std::runtime_error("Environment variables named 'CKPT', 'BB', and 'PFS' must be specified.");
+		error("Environment variables named 'CKPT', 'BB', and 'PFS' must be specified.");
 
 	if (!(ckpt = realpath(ckpt, NULL)) || !(bb = realpath(bb, NULL)) || !(pfs = realpath(pfs, NULL)))
-		throw std::runtime_error("realpath() failed (" + std::string(strerror(errno)) + ")");
+		error("realpath() failed (" + std::string(strerror(errno)) + ")");
 
 	ckpt_dir = new std::string(ckpt);
 	bb_dir = new std::string(bb);
@@ -44,21 +41,27 @@ static void init_path(void)
 	free(pfs);
 }
 
-int main(int argc, char *argv[])
+static void exit_path(void)
 {
-	config cfg;
-	init_config(argc, argv, &cfg);
+	delete ckpt_dir;
+	delete bb_dir;
+	delete pfs_dir;
+}
 
+static __attribute__((constructor)) void init(void)
+{
 	init_path();
 
-	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 20);
-	shm_cfg = segment->construct<config>("cfg")(cfg);
-	mq = segment->construct<message_queue>("q")();
+	segment = new bi::managed_shared_memory(bi::open_only, "ckptfs");
+	shm_cfg = segment->find<config>("cfg").first;
+	mq = segment->find<message_queue>("q").first;
 
-	if (pipe(pipefd) == -1)
-		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
+	intercept_hook_point = hook;
+}
 
-	drain(mq, true);
+static __attribute__((destructor)) void exit(void)
+{
+	delete segment;
 
-	/* Should not reach here */
+	exit_path();
 }

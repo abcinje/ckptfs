@@ -23,4 +23,6 @@ namespace ckpt
 	int fstatat(int dirfd, const char *pathname, struct stat *statbuf, int flags, int *result);
 }
 
+int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result);
+
 #endif //CKPTFS_CKPT_SYSCALL_HPP
