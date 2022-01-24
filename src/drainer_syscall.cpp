@@ -1,5 +1,7 @@
 #include <cerrno>
 #include <cstring>
+#include <mutex>
+#include <shared_mutex>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -39,6 +41,7 @@ namespace std
 	};
 }
 
+static std::shared_mutex fmap_mutex;
 static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *, int *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq, pipe)
 
 static void do_write(const message &msg)
@@ -46,13 +49,16 @@ static void do_write(const message &msg)
 	int bb_fd, pfs_fd, *pipefd;
 	off_t offset;
 
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		bb_fd = std::get<0>(it->second);
-		pfs_fd = std::get<1>(it->second);
-		pipefd = std::get<3>(it->second);
-	} else {
-		throw std::logic_error("no such key");
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find({msg.pid, msg.fd});
+		if (it != fmap.end()) {
+			bb_fd = std::get<0>(it->second);
+			pfs_fd = std::get<1>(it->second);
+			pipefd = std::get<3>(it->second);
+		} else {
+			throw std::logic_error("no such key");
+		}
 	}
 
 	offset = msg.offset;
@@ -69,11 +75,14 @@ static void do_fsync(const message &msg, bool data_only)
 	void *shm_synced;
 	int pfs_fd;
 
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		pfs_fd = std::get<1>(it->second);
-	} else {
-		throw std::logic_error("no such key");
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find({msg.pid, msg.fd});
+		if (it != fmap.end()) {
+			pfs_fd = std::get<1>(it->second);
+		} else {
+			throw std::logic_error("no such key");
+		}
 	}
 
 	if (data_only) {
@@ -139,8 +148,11 @@ void drainer::open(const message &msg)
 	if (pipe(pipefd) == -1)
 		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
 
-	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
-		throw std::logic_error("drainer::open() failed (the same key already exists)");
+	{
+		std::scoped_lock lock(fmap_mutex);
+		if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
+			throw std::logic_error("drainer::open() failed (the same key already exists)");
+	}
 
 	std::thread worker(drain, static_cast<message_queue *>(shm_fq), false);
 	worker.detach();
@@ -151,17 +163,19 @@ void drainer::close(const message &msg)
 	void *shm_fq;
 	int bb_fd, pfs_fd, *pipefd;
 
-	auto it = fmap.find({msg.pid, msg.fd});
-	if (it != fmap.end()) {
-		bb_fd = std::get<0>(it->second);
-		pfs_fd = std::get<1>(it->second);
-		shm_fq = std::get<2>(it->second);
-		pipefd = std::get<3>(it->second);
-	} else {
-		throw std::logic_error("drainer::close() failed (no such key)");
+	{
+		std::scoped_lock lock(fmap_mutex);
+		auto it = fmap.find({msg.pid, msg.fd});
+		if (it != fmap.end()) {
+			bb_fd = std::get<0>(it->second);
+			pfs_fd = std::get<1>(it->second);
+			shm_fq = std::get<2>(it->second);
+			pipefd = std::get<3>(it->second);
+			fmap.erase(it);
+		} else {
+			throw std::logic_error("drainer::close() failed (no such key)");
+		}
 	}
-
-	fmap.erase(it);
 
 	if (shm_cfg->lazy_fsync_enabled)
 		if (::fsync(pfs_fd) == -1)
@@ -287,4 +301,3 @@ void drain(message_queue *q, bool main)
 		}
 	}
 }
-
