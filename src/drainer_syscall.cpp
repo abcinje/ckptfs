@@ -144,7 +144,7 @@ void drainer::open(const message &msg)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	pipefd = new int[2];
-	if (pipe(pipefd) == -1)
+	if (::pipe(pipefd) == -1)
 		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
 
 	{
