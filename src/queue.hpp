@@ -5,7 +5,7 @@
 
 namespace bi = boost::interprocess;
 
-template <typename T, size_t capacity = 1024>
+template <typename T, size_t capacity = 16>
 class queue {
 private:
 	T buffer[capacity];

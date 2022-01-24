@@ -15,10 +15,10 @@ public:
 	int fd;
 	off_t offset;
 	size_t len;
-	shm_handle handle;
+	shm_handle handle0, handle1;
 
 	message(void);
-	message(long syscall, pid_t pid, int fd, off_t offset, size_t len, shm_handle handle);
+	message(long syscall, pid_t pid, int fd, off_t offset, size_t len, shm_handle handle0 = 0, shm_handle handle1 = 0);
 };
 
 #endif //CKPTFS_MESSAGE_HPP

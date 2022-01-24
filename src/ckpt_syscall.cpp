@@ -33,7 +33,7 @@ extern config *shm_cfg;
 extern message_queue *mq;
 
 static std::shared_mutex fmap_mutex;
-static std::unordered_map<int, std::tuple<int, off_t, off_t>> fmap; // fmap: bb_fd -> (pfs_fd, offset, len)
+static std::unordered_map<int, std::tuple<int, off_t, off_t, message_queue *>> fmap; // fmap: bb_fd -> (pfs_fd, offset, len, fq)
 
 
 
@@ -44,10 +44,11 @@ static std::unordered_map<int, std::tuple<int, off_t, off_t>> fmap; // fmap: bb_
 int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 {
 	void *shm_synced;
-	shm_handle handle;
+	shm_handle synced_handle;
 	pid_t pid;
 	int pfs_fd;
 	off_t *offset;
+	message_queue *fq;
 
 	{
 		std::shared_lock lock(fmap_mutex);
@@ -55,6 +56,7 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 		if (it != fmap.end()) {
 			pfs_fd = std::get<0>(it->second);
 			offset = &std::get<1>(it->second);
+			fq = std::get<3>(it->second);
 		} else {
 			return 1;
 		}
@@ -62,10 +64,10 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 
 	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
 	new (shm_synced) bi::interprocess_semaphore(0);
-	handle = segment->get_handle_from_address(shm_synced);
+	synced_handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_read, pid, fd, 0, 0, handle));
+	fq->issue(message(SYS_read, pid, fd, 0, 0, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -83,6 +85,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	pid_t pid;
 	int pfs_fd;
 	off_t *offset, *len;
+	message_queue *fq;
 
 	{
 		std::shared_lock lock(fmap_mutex);
@@ -91,6 +94,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 			pfs_fd = std::get<0>(it->second);
 			offset = &std::get<1>(it->second);
 			len = &std::get<2>(it->second);
+			fq = std::get<3>(it->second);
 		} else {
 			return 1;
 		}
@@ -100,7 +104,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 		error("write() failed (" + std::string(strerror(errno)) + ")");
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_write, pid, fd, *offset, *result, 0));
+	fq->issue(message(SYS_write, pid, fd, *offset, *result));
 
 	*offset += *result;
 	if (*len < *offset) {
@@ -114,8 +118,8 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
-	void *shm_pathname;
-	shm_handle handle;
+	void *shm_pathname, *shm_fq;
+	shm_handle pathname_handle, fq_handle;
 	pid_t pid;
 	int bb_fd, pfs_fd;
 	struct stat statbuf;
@@ -150,10 +154,14 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 	shm_pathname = segment->allocate(ckpt_file.size() + 1);
 	std::memcpy(shm_pathname, ckpt_file.data(), ckpt_file.size() + 1);
-	handle = segment->get_handle_from_address(shm_pathname);
+	pathname_handle = segment->get_handle_from_address(shm_pathname);
+
+	shm_fq = segment->allocate(sizeof(message_queue));
+	new (shm_fq) message_queue();
+	fq_handle = segment->get_handle_from_address(shm_fq);
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_open, pid, bb_fd, 0, 0, handle));
+	mq->issue(message(SYS_open, pid, bb_fd, 0, 0, pathname_handle, fq_handle));
 
 	if (syscall_no_intercept(SYS_fstat, pfs_fd, &statbuf) == -1)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
@@ -161,7 +169,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 	{
 		std::scoped_lock lock(fmap_mutex);
-		if (!fmap.insert({bb_fd, {pfs_fd, 0, len}}).second)
+		if (!fmap.insert({bb_fd, {pfs_fd, 0, len, static_cast<message_queue *>(shm_fq)}}).second)
 			error("ckpt::open() failed (the same key already exists)");
 	}
 
@@ -172,11 +180,13 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 int ckpt::close(int fd, int *result)
 {
 	pid_t pid;
+	message_queue *fq;
 
 	{
 		std::scoped_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
+			fq = std::get<3>(it->second);
 			fmap.erase(it);
 		} else {
 			return 1;
@@ -184,7 +194,7 @@ int ckpt::close(int fd, int *result)
 	}
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_close, pid, fd, 0, 0, 0));
+	fq->issue(message(SYS_close, pid, fd, 0, 0));
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
 		error("close() failed (" + std::string(strerror(errno)) + ")");
@@ -288,15 +298,17 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	void *shm_synced;
-	shm_handle handle;
+	shm_handle synced_handle;
 	pid_t pid;
 	int pfs_fd;
+	message_queue *fq;
 
 	{
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
 			pfs_fd = std::get<0>(it->second);
+			fq = std::get<3>(it->second);
 		} else {
 			return 1;
 		}
@@ -304,10 +316,10 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 
 	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
 	new (shm_synced) bi::interprocess_semaphore(0);
-	handle = segment->get_handle_from_address(shm_synced);
+	synced_handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_pread64, pid, fd, 0, 0, handle));
+	fq->issue(message(SYS_pread64, pid, fd, 0, 0, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -323,6 +335,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	pid_t pid;
 	int pfs_fd;
 	off_t *len;
+	message_queue *fq;
 
 	{
 		std::shared_lock lock(fmap_mutex);
@@ -330,6 +343,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 		if (it != fmap.end()) {
 			pfs_fd = std::get<0>(it->second);
 			len = &std::get<2>(it->second);
+			fq = std::get<3>(it->second);
 		} else {
 			return 1;
 		}
@@ -339,7 +353,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_pwrite64, pid, fd, offset, *result, 0));
+	fq->issue(message(SYS_pwrite64, pid, fd, offset, *result));
 
 	offset += *result;
 	if (*len < offset) {
@@ -354,10 +368,11 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
 	void *shm_synced;
-	shm_handle handle;
+	shm_handle synced_handle;
 	pid_t pid;
 	int pfs_fd;
 	off_t *offset;
+	message_queue *fq;
 
 	{
 		std::shared_lock lock(fmap_mutex);
@@ -365,6 +380,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		if (it != fmap.end()) {
 			pfs_fd = std::get<0>(it->second);
 			offset = &std::get<1>(it->second);
+			fq = std::get<3>(it->second);
 		} else {
 			return 1;
 		}
@@ -372,10 +388,10 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
 	new (shm_synced) bi::interprocess_semaphore(0);
-	handle = segment->get_handle_from_address(shm_synced);
+	synced_handle = segment->get_handle_from_address(shm_synced);
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_readv, pid, fd, 0, 0, handle));
+	fq->issue(message(SYS_readv, pid, fd, 0, 0, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -393,6 +409,7 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	pid_t pid;
 	int pfs_fd;
 	off_t *offset, *len;
+	message_queue *fq;
 
 	{
 		std::shared_lock lock(fmap_mutex);
@@ -401,6 +418,7 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 			pfs_fd = std::get<0>(it->second);
 			offset = &std::get<1>(it->second);
 			len = &std::get<2>(it->second);
+			fq = std::get<3>(it->second);
 		} else {
 			return 1;
 		}
@@ -410,7 +428,7 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		error("writev() failed (" + std::string(strerror(errno)) + ")");
 
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_writev, pid, fd, *offset, *result, 0));
+	fq->issue(message(SYS_writev, pid, fd, *offset, *result));
 
 	*offset += *result;
 	if (*len < *offset) {
@@ -425,22 +443,27 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 int ckpt::fsync(int fd, int *result)
 {
 	void *shm_synced;
-	shm_handle handle;
+	shm_handle synced_handle;
 	pid_t pid;
+	message_queue *fq;
 
 	if (!shm_cfg->lazy_fsync_enabled) {
 		{
 			std::shared_lock lock(fmap_mutex);
-			if (fmap.find(fd) == fmap.end())
+			auto it = fmap.find(fd);
+			if (it != fmap.end()) {
+				fq = std::get<3>(it->second);
+			} else {
 				return 1;
+			}
 		}
 
 		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
 		new (shm_synced) bi::interprocess_semaphore(0);
-		handle = segment->get_handle_from_address(shm_synced);
+		synced_handle = segment->get_handle_from_address(shm_synced);
 
 		pid = syscall_no_intercept(SYS_getpid);
-		mq->issue(message(SYS_fsync, pid, fd, 0, 0, handle));
+		fq->issue(message(SYS_fsync, pid, fd, 0, 0, synced_handle));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
@@ -453,22 +476,27 @@ int ckpt::fsync(int fd, int *result)
 int ckpt::fdatasync(int fd, int *result)
 {
 	void *shm_synced;
-	shm_handle handle;
+	shm_handle synced_handle;
 	pid_t pid;
+	message_queue *fq;
 
 	if (!shm_cfg->lazy_fsync_enabled) {
 		{
 			std::shared_lock lock(fmap_mutex);
-			if (fmap.find(fd) == fmap.end())
+			auto it = fmap.find(fd);
+			if (it != fmap.end()) {
+				fq = std::get<3>(it->second);
+			} else {
 				return 1;
+			}
 		}
 
 		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
 		new (shm_synced) bi::interprocess_semaphore(0);
-		handle = segment->get_handle_from_address(shm_synced);
+		synced_handle = segment->get_handle_from_address(shm_synced);
 
 		pid = syscall_no_intercept(SYS_getpid);
-		mq->issue(message(SYS_fdatasync, pid, fd, 0, 0, handle));
+		fq->issue(message(SYS_fdatasync, pid, fd, 0, 0, synced_handle));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);

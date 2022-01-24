@@ -2,6 +2,8 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 
@@ -17,6 +19,10 @@ namespace bi = boost::interprocess;
 
 #include "config.hpp"
 #include "drainer_syscall.hpp"
+#include "message.hpp"
+#include "queue.hpp"
+
+using message_queue = queue<message>;
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
@@ -34,7 +40,46 @@ namespace std
 	};
 }
 
-static std::unordered_map<std::pair<pid_t, int>, std::pair<int, int>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd)
+static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq)
+
+static void work(message_queue *fq)
+{
+	while (true) {
+		message msg(fq->dispatch());
+
+		switch (msg.syscall) {
+			case SYS_read:
+				drainer::read(msg);
+				break;
+			case SYS_write:
+				drainer::write(msg);
+				break;
+			case SYS_close:
+				drainer::close(msg);
+				return;
+			case SYS_pread64:
+				drainer::pread(msg);
+				break;
+			case SYS_pwrite64:
+				drainer::pwrite(msg);
+				break;
+			case SYS_readv:
+				drainer::readv(msg);
+				break;
+			case SYS_writev:
+				drainer::writev(msg);
+				break;
+			case SYS_fsync:
+				drainer::fsync(msg);
+				break;
+			case SYS_fdatasync:
+				drainer::fdatasync(msg);
+				break;
+			default:
+				throw std::logic_error("work() failed (invalid operation type)");
+		}
+	}
+}
 
 static void do_write(const message &msg)
 {
@@ -43,8 +88,8 @@ static void do_write(const message &msg)
 
 	auto it = fmap.find({msg.pid, msg.fd});
 	if (it != fmap.end()) {
-		bb_fd = it->second.first;
-		pfs_fd = it->second.second;
+		bb_fd = std::get<0>(it->second);
+		pfs_fd = std::get<1>(it->second);
 	} else {
 		throw std::logic_error("no such key");
 	}
@@ -65,7 +110,7 @@ static void do_fsync(const message &msg, bool data_only)
 
 	auto it = fmap.find({msg.pid, msg.fd});
 	if (it != fmap.end()) {
-		pfs_fd = it->second.second;
+		pfs_fd = std::get<1>(it->second);
 	} else {
 		throw std::logic_error("no such key");
 	}
@@ -78,7 +123,7 @@ static void do_fsync(const message &msg, bool data_only)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 	}
 
-	shm_synced = segment->get_address_from_handle(msg.handle);
+	shm_synced = segment->get_address_from_handle(msg.handle0);
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 }
 
@@ -108,14 +153,16 @@ void drainer::write(const message &msg)
 
 void drainer::open(const message &msg)
 {
-	void *shm_pathname;
+	void *shm_pathname, *shm_fq;
 	int bb_fd, pfs_fd;
 
-	shm_pathname = segment->get_address_from_handle(msg.handle);
+	shm_pathname = segment->get_address_from_handle(msg.handle0);
 	std::string ckpt_file(static_cast<char *>(shm_pathname));
 	segment->deallocate(shm_pathname);
 	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
 		throw std::runtime_error("drainer::open() failed (invalid pathname)");
+
+	shm_fq = segment->get_address_from_handle(msg.handle1);
 
 	std::string file(ckpt_file.substr(ckpt_dir->size()));
 	std::string bb_file(*bb_dir + file);
@@ -127,27 +174,34 @@ void drainer::open(const message &msg)
 	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd}}).second)
+	std::thread worker(work, static_cast<message_queue *>(shm_fq));
+	worker.detach();
+
+	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq}}).second)
 		throw std::logic_error("drainer::open() failed (the same key already exists)");
 }
 
 void drainer::close(const message &msg)
 {
+	void *shm_fq;
 	int bb_fd, pfs_fd;
 
 	auto it = fmap.find({msg.pid, msg.fd});
 	if (it != fmap.end()) {
-		bb_fd = it->second.first;
-		pfs_fd = it->second.second;
+		bb_fd = std::get<0>(it->second);
+		pfs_fd = std::get<1>(it->second);
+		shm_fq = std::get<2>(it->second);
 	} else {
 		throw std::logic_error("drainer::close() failed (no such key)");
 	}
 
+	fmap.erase(it);
+
+	segment->deallocate(shm_fq);
+
 	if (shm_cfg->lazy_fsync_enabled)
 		if (::fsync(pfs_fd) == -1)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
-
-	fmap.erase(it);
 
 	if (::close(bb_fd) == -1)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
