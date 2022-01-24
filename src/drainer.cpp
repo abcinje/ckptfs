@@ -21,7 +21,6 @@ using message_queue = queue<message>;
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 bi::managed_shared_memory *segment;
 config *shm_cfg;
-int pipefd[2];
 
 static void init_path(void)
 {
@@ -54,9 +53,6 @@ int main(int argc, char *argv[])
 	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 20);
 	shm_cfg = segment->construct<config>("cfg")(cfg);
 	mq = segment->construct<message_queue>("q")();
-
-	if (pipe(pipefd) == -1)
-		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
 
 	drain(mq, true);
 

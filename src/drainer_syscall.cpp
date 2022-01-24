@@ -27,7 +27,6 @@ using message_queue = queue<message>;
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 extern config *shm_cfg;
-extern int pipefd[2];
 
 namespace std
 {
@@ -40,17 +39,18 @@ namespace std
 	};
 }
 
-static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq)
+static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *, int *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq, pipe)
 
 static void do_write(const message &msg)
 {
-	int bb_fd, pfs_fd;
+	int bb_fd, pfs_fd, *pipefd;
 	off_t offset;
 
 	auto it = fmap.find({msg.pid, msg.fd});
 	if (it != fmap.end()) {
 		bb_fd = std::get<0>(it->second);
 		pfs_fd = std::get<1>(it->second);
+		pipefd = std::get<3>(it->second);
 	} else {
 		throw std::logic_error("no such key");
 	}
@@ -115,7 +115,7 @@ void drainer::write(const message &msg)
 void drainer::open(const message &msg)
 {
 	void *shm_pathname, *shm_fq;
-	int bb_fd, pfs_fd;
+	int bb_fd, pfs_fd, *pipefd;
 
 	shm_pathname = segment->get_address_from_handle(msg.handle0);
 	std::string ckpt_file(static_cast<char *>(shm_pathname));
@@ -135,34 +135,40 @@ void drainer::open(const message &msg)
 	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
+	pipefd = new int[2];
+	if (pipe(pipefd) == -1)
+		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
+
+	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
+		throw std::logic_error("drainer::open() failed (the same key already exists)");
+
 	std::thread worker(drain, static_cast<message_queue *>(shm_fq), false);
 	worker.detach();
-
-	if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq}}).second)
-		throw std::logic_error("drainer::open() failed (the same key already exists)");
 }
 
 void drainer::close(const message &msg)
 {
 	void *shm_fq;
-	int bb_fd, pfs_fd;
+	int bb_fd, pfs_fd, *pipefd;
 
 	auto it = fmap.find({msg.pid, msg.fd});
 	if (it != fmap.end()) {
 		bb_fd = std::get<0>(it->second);
 		pfs_fd = std::get<1>(it->second);
 		shm_fq = std::get<2>(it->second);
+		pipefd = std::get<3>(it->second);
 	} else {
 		throw std::logic_error("drainer::close() failed (no such key)");
 	}
 
 	fmap.erase(it);
 
-	segment->deallocate(shm_fq);
-
 	if (shm_cfg->lazy_fsync_enabled)
 		if (::fsync(pfs_fd) == -1)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+
+	delete []pipefd;
+	segment->deallocate(shm_fq);
 
 	if (::close(bb_fd) == -1)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
