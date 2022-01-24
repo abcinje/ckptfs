@@ -27,7 +27,7 @@ namespace std
 {
 	template <>
 	struct hash<std::pair<pid_t, int>> {
-		size_t operator ()(const std::pair<pid_t, int> &pair) const
+		size_t operator()(const std::pair<pid_t, int> &pair) const
 		{
 			return hash<pid_t>()(pair.first) ^ hash<int>()(pair.second);
 		}
