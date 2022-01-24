@@ -23,8 +23,6 @@ bi::managed_shared_memory *segment;
 config *shm_cfg;
 int pipefd[2];
 
-static message_queue *mq;
-
 static void init_path(void)
 {
 	char *ckpt, *bb, *pfs;
@@ -47,6 +45,8 @@ static void init_path(void)
 int main(int argc, char *argv[])
 {
 	config cfg;
+	message_queue *mq;
+
 	init_config(argc, argv, &cfg);
 
 	init_path();

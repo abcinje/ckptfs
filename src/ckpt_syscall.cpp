@@ -596,4 +596,3 @@ int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long a
 			return 1;
 	}
 }
-

@@ -42,7 +42,6 @@ namespace std
 
 static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq)
 
-
 static void do_write(const message &msg)
 {
 	int bb_fd, pfs_fd;
