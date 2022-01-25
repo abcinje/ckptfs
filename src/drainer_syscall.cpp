@@ -41,7 +41,7 @@ namespace std
 }
 
 static std::shared_mutex fmap_mutex;
-static std::unordered_map<std::pair<pid_t, int>, std::tuple<int, int, void *, int *>> fmap; // fmap: (pid, fd) -> (bb_fd, pfs_fd, fq, pipe)
+static std::unordered_map<uint64_t, std::tuple<int, int, void *, int *>> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
 
 static void do_write(const message &msg)
 {
@@ -50,7 +50,7 @@ static void do_write(const message &msg)
 
 	{
 		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find({msg.pid, msg.fd});
+		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			bb_fd = std::get<0>(it->second);
 			pfs_fd = std::get<1>(it->second);
@@ -76,7 +76,7 @@ static void do_fsync(const message &msg, bool data_only)
 
 	{
 		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find({msg.pid, msg.fd});
+		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			pfs_fd = std::get<1>(it->second);
 		} else {
@@ -149,7 +149,7 @@ void drainer::open(const message &msg)
 
 	{
 		std::scoped_lock lock(fmap_mutex);
-		if (!fmap.insert({{msg.pid, msg.fd}, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
+		if (!fmap.insert({msg.ofid, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
 			throw std::logic_error("drainer::open() failed (the same key already exists)");
 	}
 }
@@ -161,7 +161,7 @@ void drainer::close(const message &msg)
 
 	{
 		std::scoped_lock lock(fmap_mutex);
-		auto it = fmap.find({msg.pid, msg.fd});
+		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			bb_fd = std::get<0>(it->second);
 			pfs_fd = std::get<1>(it->second);
