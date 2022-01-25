@@ -177,7 +177,7 @@ void drainer::close(const message &msg)
 		if (::fsync(pfs_fd) == -1)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 
-	delete []pipefd;
+	delete[] pipefd;
 	segment->deallocate(shm_fq);
 
 	if (::close(bb_fd) == -1)
