@@ -104,6 +104,9 @@ int main(int argc, char *argv[])
 		message_queue *fq = static_cast<message_queue *>(shm_fq);
 		fq->issue(msg);
 
+		void *shm_synced = segment->get_address_from_handle(msg.handle2);
+		(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
+
 		std::thread worker(drain, fq);
 		worker.detach();
 	}

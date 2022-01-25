@@ -123,8 +123,8 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
-	void *shm_pathname, *shm_fq;
-	shm_handle pathname_handle, fq_handle;
+	void *shm_pathname, *shm_fq, *shm_synced;
+	shm_handle pathname_handle, fq_handle, synced_handle;
 	pid_t pid;
 	uint64_t ofid;
 	int bb_fd, pfs_fd;
@@ -168,8 +168,15 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	new (shm_fq) message_queue();
 	fq_handle = segment->get_handle_from_address(shm_fq);
 
+	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+	new (shm_synced) bi::interprocess_semaphore(0);
+	synced_handle = segment->get_handle_from_address(shm_synced);
+
 	pid = syscall_no_intercept(SYS_getpid);
-	mq->issue(message(SYS_open, ofid, 0, 0, pathname_handle, fq_handle));
+	mq->issue(message(SYS_open, ofid, 0, 0, pathname_handle, fq_handle, synced_handle));
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
+
+	segment->deallocate(shm_synced);
 
 	if (syscall_no_intercept(SYS_fstat, pfs_fd, &statbuf) == -1)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");

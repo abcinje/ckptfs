@@ -14,10 +14,10 @@ public:
 	uint64_t ofid;
 	off_t offset;
 	size_t len;
-	shm_handle handle0, handle1;
+	shm_handle handle0, handle1, handle2;
 
 	message(void);
-	message(long syscall, uint64_t ofid, off_t offset, size_t len, shm_handle handle0 = 0, shm_handle handle1 = 0);
+	message(long syscall, uint64_t ofid, off_t offset, size_t len, shm_handle handle0 = 0, shm_handle handle1 = 0, shm_handle handle2 = 0);
 };
 
 #endif //CKPTFS_MESSAGE_HPP
