@@ -25,6 +25,8 @@ namespace bi = boost::interprocess;
 
 using message_queue = queue<message>;
 
+#define PIPE_CAPACITY (1 << 20)
+
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 extern config *shm_cfg;
@@ -35,7 +37,8 @@ static std::unordered_map<uint64_t, std::tuple<int, int, void *, int *>> fmap; /
 static void do_write(const message &msg)
 {
 	int bb_fd, pfs_fd, *pipefd;
-	off_t offset;
+	off_t offset0, offset1;
+	ssize_t len, spliced;
 
 	{
 		std::shared_lock lock(fmap_mutex);
@@ -49,13 +52,21 @@ static void do_write(const message &msg)
 		}
 	}
 
-	offset = msg.offset;
-	if (::splice(bb_fd, &offset, pipefd[1], nullptr, msg.len, SPLICE_F_MOVE) == -1)
-		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+	offset0 = offset1 = msg.offset;
+	if ((len = msg.len) < 0)
+		throw std::overflow_error("do_write() failed (integer overflow)");
 
-	offset = msg.offset;
-	if (::splice(pipefd[0], nullptr, pfs_fd, &offset, msg.len, SPLICE_F_MOVE) == -1)
-		throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+	do {
+		spliced = (len < PIPE_CAPACITY) ? len : PIPE_CAPACITY;
+
+		if (::splice(bb_fd, &offset1, pipefd[1], nullptr, spliced, SPLICE_F_MOVE) == -1)
+			throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+
+		if (::splice(pipefd[0], nullptr, pfs_fd, &offset0, spliced, SPLICE_F_MOVE) == -1)
+			throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+
+		len -= spliced;
+	} while (len > 0);
 }
 
 static void do_fsync(const message &msg, bool data_only)
@@ -135,6 +146,9 @@ void drainer::open(const message &msg)
 	pipefd = new int[2];
 	if (::pipe(pipefd) == -1)
 		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
+
+	if (::fcntl(pipefd[0], F_SETPIPE_SZ, PIPE_CAPACITY) == -1)
+		throw std::runtime_error("fcntl() failed (" + std::string(strerror(errno)) + ")");
 
 	{
 		std::scoped_lock lock(fmap_mutex);
