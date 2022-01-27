@@ -46,7 +46,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
-	pid_t pid;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
@@ -69,7 +68,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_read, ofid, 0, 0, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
@@ -85,7 +83,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 {
-	pid_t pid;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
@@ -108,7 +105,6 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	if ((*result = syscall_no_intercept(SYS_write, fd, buf, count)) == -1)
 		error("write() failed (" + std::string(strerror(errno)) + ")");
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_write, ofid, *offset, *result));
 
 	*offset += *result;
@@ -125,7 +121,6 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
 	void *shm_pathname, *shm_fq, *shm_synced;
 	shm_handle pathname_handle, fq_handle, synced_handle;
-	pid_t pid;
 	uint64_t ofid;
 	int bb_fd, pfs_fd;
 	struct stat statbuf;
@@ -172,7 +167,6 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	pid = syscall_no_intercept(SYS_getpid);
 	mq->issue(message(SYS_open, ofid, 0, 0, pathname_handle, fq_handle, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
@@ -194,7 +188,6 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 int ckpt::close(int fd, int *result)
 {
-	pid_t pid;
 	uint64_t ofid;
 	message_queue *fq;
 
@@ -210,7 +203,6 @@ int ckpt::close(int fd, int *result)
 		}
 	}
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_close, ofid, 0, 0));
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
@@ -316,7 +308,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
-	pid_t pid;
 	uint64_t ofid;
 	int pfs_fd;
 	message_queue *fq;
@@ -337,7 +328,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_pread64, ofid, 0, 0, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
@@ -351,7 +341,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
 {
-	pid_t pid;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *len;
@@ -373,7 +362,6 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	if ((*result = syscall_no_intercept(SYS_pwrite64, fd, buf, count, offset)) == -1)
 		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_pwrite64, ofid, offset, *result));
 
 	offset += *result;
@@ -390,7 +378,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
-	pid_t pid;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
@@ -413,7 +400,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_readv, ofid, 0, 0, synced_handle));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
@@ -429,7 +415,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
-	pid_t pid;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
@@ -452,7 +437,6 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	if ((*result = syscall_no_intercept(SYS_writev, fd, iov, iovcnt)) == -1)
 		error("writev() failed (" + std::string(strerror(errno)) + ")");
 
-	pid = syscall_no_intercept(SYS_getpid);
 	fq->issue(message(SYS_writev, ofid, *offset, *result));
 
 	*offset += *result;
@@ -469,7 +453,6 @@ int ckpt::fsync(int fd, int *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
-	pid_t pid;
 	uint64_t ofid;
 	message_queue *fq;
 
@@ -489,7 +472,6 @@ int ckpt::fsync(int fd, int *result)
 		new (shm_synced) bi::interprocess_semaphore(0);
 		synced_handle = segment->get_handle_from_address(shm_synced);
 
-		pid = syscall_no_intercept(SYS_getpid);
 		fq->issue(message(SYS_fsync, ofid, 0, 0, synced_handle));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
@@ -504,7 +486,6 @@ int ckpt::fdatasync(int fd, int *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
-	pid_t pid;
 	uint64_t ofid;
 	message_queue *fq;
 
@@ -524,7 +505,6 @@ int ckpt::fdatasync(int fd, int *result)
 		new (shm_synced) bi::interprocess_semaphore(0);
 		synced_handle = segment->get_handle_from_address(shm_synced);
 
-		pid = syscall_no_intercept(SYS_getpid);
 		fq->issue(message(SYS_fdatasync, ofid, 0, 0, synced_handle));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 

@@ -29,17 +29,6 @@ extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 extern config *shm_cfg;
 
-namespace std
-{
-	template <>
-	struct hash<std::pair<pid_t, int>> {
-		size_t operator()(const std::pair<pid_t, int> &pair) const
-		{
-			return hash<pid_t>()(pair.first) ^ hash<int>()(pair.second);
-		}
-	};
-}
-
 static std::shared_mutex fmap_mutex;
 static std::unordered_map<uint64_t, std::tuple<int, int, void *, int *>> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
 
