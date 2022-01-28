@@ -2,7 +2,7 @@
 # => Packages
 ###################
 
-# pthread
+# thread
 find_package(Threads REQUIRED)
 
 # boost
