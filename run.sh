@@ -15,7 +15,7 @@ mkdir -p "$PFS"
 
 repos_root="$(dirname $0)"
 
-if [ ! -e "/dev/shm/ckptfs" ]; then
+if [ ! "$(ps -e | grep drainer)" ]; then
   "$repos_root/build/bin/drainer" &
   drainer_pid="$!"
 fi
@@ -23,5 +23,6 @@ fi
 LD_PRELOAD="$repos_root/build/lib/libckpt.so" "$@"
 
 if [ "$drainer_pid" ]; then
-  kill -SIGINT "$drainer_pid"
+  kill -- "$drainer_pid"
+  rm "/dev/shm/ckptfs"
 fi
