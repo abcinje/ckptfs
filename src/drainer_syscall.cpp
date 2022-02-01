@@ -92,7 +92,7 @@ static void do_fsync(const message &msg, bool data_only)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 	}
 
-	shm_synced = segment->get_address_from_handle(msg.handle0);
+	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 }
 
@@ -125,13 +125,13 @@ void drainer::open(const message &msg)
 	void *shm_pathname, *shm_fq;
 	int bb_fd, pfs_fd, *pipefd;
 
-	shm_pathname = segment->get_address_from_handle(msg.handle0);
+	shm_pathname = segment->get_address_from_handle(msg.handles.pathname_handle);
 	std::string ckpt_file(static_cast<char *>(shm_pathname));
 	segment->deallocate(shm_pathname);
 	if (ckpt_file.rfind(*ckpt_dir, 0) == std::string::npos)
 		throw std::runtime_error("drainer::open() failed (invalid pathname)");
 
-	shm_fq = segment->get_address_from_handle(msg.handle1);
+	shm_fq = segment->get_address_from_handle(msg.handles.fq_handle);
 
 	std::string file(ckpt_file.substr(ckpt_dir->size()));
 	std::string bb_file(*bb_dir + file);

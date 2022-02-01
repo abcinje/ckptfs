@@ -100,11 +100,11 @@ int main(int argc, char *argv[])
 		if (msg.syscall != SYS_open)
 			throw std::logic_error("main() failed (invalid operation type)");
 
-		void *shm_fq = segment->get_address_from_handle(msg.handle1);
+		void *shm_fq = segment->get_address_from_handle(msg.handles.fq_handle);
 		message_queue *fq = static_cast<message_queue *>(shm_fq);
 		fq->issue(msg);
 
-		void *shm_synced = segment->get_address_from_handle(msg.handle2);
+		void *shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 
 		std::thread worker(drain, fq);
