@@ -12,7 +12,6 @@ namespace bi = boost::interprocess;
 #include <libsyscall_intercept_hook_point.h>
 
 #include "ckpt_syscall.hpp"
-#include "config.hpp"
 #include "message.hpp"
 #include "queue.hpp"
 #include "util.hpp"
@@ -20,8 +19,11 @@ namespace bi = boost::interprocess;
 using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
+
+/* config */
+int fsync_lazy_level;
+
 bi::managed_shared_memory *segment;
-config *shm_cfg;
 message_queue *mq;
 
 static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result)
@@ -98,12 +100,30 @@ static void exit_path(void)
 	delete pfs_dir;
 }
 
+static void init_config(void)
+{
+	char *endptr;
+
+	char *fsync_lazy_level_env;
+	if (fsync_lazy_level_env = getenv("FSYNC_LAZY_LEVEL")) {
+		unsigned long ret = strtoul(fsync_lazy_level_env, &endptr, 0);
+		if (*endptr != '\0' || ret == ULONG_MAX)
+			error("strtoul() failed (invalid input)");
+
+		if (ret > 3)
+			error("init_config() failed (invalid input)");
+
+		fsync_lazy_level = static_cast<int>(ret);
+	}
+}
+
 static __attribute__((constructor)) void init(void)
 {
 	init_path();
 
+	init_config();
+
 	segment = new bi::managed_shared_memory(bi::open_only, "ckptfs");
-	shm_cfg = segment->find<config>("cfg").first;
 	mq = segment->find<message_queue>("q").first;
 
 	intercept_hook_point = hook;

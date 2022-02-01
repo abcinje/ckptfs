@@ -20,7 +20,6 @@ namespace bi = boost::interprocess;
 #include <libsyscall_intercept_hook_point.h>
 
 #include "ckpt_syscall.hpp"
-#include "config.hpp"
 #include "message.hpp"
 #include "queue.hpp"
 #include "random.hpp"
@@ -29,8 +28,11 @@ namespace bi = boost::interprocess;
 using message_queue = queue<message>;
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
+
+/* config */
+extern int fsync_lazy_level;
+
 extern bi::managed_shared_memory *segment;
-extern config *shm_cfg;
 extern message_queue *mq;
 
 static std::shared_mutex fmap_mutex;
@@ -196,6 +198,8 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 int ckpt::close(int fd, int *result)
 {
+	void *shm_synced;
+	shm_handle synced_handle;
 	uint64_t ofid;
 	message_queue *fq;
 
@@ -211,7 +215,21 @@ int ckpt::close(int fd, int *result)
 		}
 	}
 
-	fq->issue(message(SYS_close, ofid, 0, 0));
+	if (fsync_lazy_level == 1) {
+		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+		new (shm_synced) bi::interprocess_semaphore(0);
+		synced_handle = segment->get_handle_from_address(shm_synced);
+
+		message::handle_vec handles = {
+			.synced_handle = synced_handle,
+		};
+		fq->issue(message(SYS_close, ofid, 0, 0, handles, FSYNC_CLOSE_WAIT));
+		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
+
+		segment->deallocate(shm_synced);
+	} else if (fsync_lazy_level == 2) {
+		fq->issue(message(SYS_close, ofid, 0, 0, {}, FSYNC_CLOSE_NOWAIT));
+	}
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
 		error("close() failed (" + std::string(strerror(errno)) + ")");
@@ -470,7 +488,7 @@ int ckpt::fsync(int fd, int *result)
 	uint64_t ofid;
 	message_queue *fq;
 
-	if (!shm_cfg->lazy_fsync_enabled) {
+	if (fsync_lazy_level == 0) {
 		{
 			std::shared_lock lock(fmap_mutex);
 			auto it = fmap.find(fd);
@@ -489,7 +507,7 @@ int ckpt::fsync(int fd, int *result)
 		message::handle_vec handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fsync, ofid, 0, 0, handles));
+		fq->issue(message(SYS_fsync, ofid, 0, 0, handles, FSYNC_NORMAL));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
@@ -506,7 +524,7 @@ int ckpt::fdatasync(int fd, int *result)
 	uint64_t ofid;
 	message_queue *fq;
 
-	if (!shm_cfg->lazy_fsync_enabled) {
+	if (fsync_lazy_level == 0) {
 		{
 			std::shared_lock lock(fmap_mutex);
 			auto it = fmap.find(fd);
@@ -525,7 +543,7 @@ int ckpt::fdatasync(int fd, int *result)
 		message::handle_vec handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fdatasync, ofid, 0, 0, handles));
+		fq->issue(message(SYS_fdatasync, ofid, 0, 0, handles, FSYNC_NORMAL));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);

@@ -5,10 +5,13 @@
 
 #include <boost/interprocess/managed_shared_memory.hpp>
 
-#include "syscall_flag.hpp"
-
 namespace bi = boost::interprocess;
 using shm_handle = bi::managed_shared_memory::handle_t;
+
+#define FSYNC_NORMAL		0x1	// fsync_lazy_level == 0
+#define FSYNC_CLOSE_WAIT	0x2	// fsync_lazy_level == 1
+#define FSYNC_CLOSE_NOWAIT	0x4	// fsync_lazy_level == 2
+#define FSYNC_IGNORE		0x8	// fsync_lazy_level == 3
 
 class message {
 public:
@@ -19,10 +22,10 @@ public:
 	struct handle_vec {
 		shm_handle fq_handle, pathname_handle, synced_handle;
 	} handles;
-	syscall_flag flags;
+	int flags;
 
 	message(void);
-	message(long syscall, uint64_t ofid, off_t offset, size_t len, handle_vec handles = {}, syscall_flag flags = syscall_flag::FSYNC_NORMAL);
+	message(long syscall, uint64_t ofid, off_t offset, size_t len, handle_vec handles = {}, int flags = 0);
 };
 
 #endif //CKPTFS_MESSAGE_HPP

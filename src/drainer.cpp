@@ -12,7 +12,6 @@
 
 namespace bi = boost::interprocess;
 
-#include "config.hpp"
 #include "drainer_syscall.hpp"
 #include "message.hpp"
 #include "queue.hpp"
@@ -21,7 +20,6 @@ using message_queue = queue<message>;
 
 std::string *ckpt_dir, *bb_dir, *pfs_dir;
 bi::managed_shared_memory *segment;
-config *shm_cfg;
 
 static void drain(message_queue *fq)
 {
@@ -86,13 +84,9 @@ static void init_path(void)
 
 int main(int argc, char *argv[])
 {
-	config cfg;
-	init_config(argc, argv, &cfg);
-
 	init_path();
 
 	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 20);
-	shm_cfg = segment->construct<config>("cfg")(cfg);
 	message_queue *mq = segment->construct<message_queue>("q")();
 
 	while (true) {

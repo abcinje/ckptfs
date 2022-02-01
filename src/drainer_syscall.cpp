@@ -18,7 +18,6 @@
 
 namespace bi = boost::interprocess;
 
-#include "config.hpp"
 #include "drainer_syscall.hpp"
 #include "message.hpp"
 #include "queue.hpp"
@@ -29,7 +28,6 @@ using message_queue = queue<message>;
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
-extern config *shm_cfg;
 
 static std::shared_mutex fmap_mutex;
 static std::unordered_map<uint64_t, std::tuple<int, int, void *, int *>> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
@@ -159,7 +157,7 @@ void drainer::open(const message &msg)
 
 void drainer::close(const message &msg)
 {
-	void *shm_fq;
+	void *shm_fq, *shm_synced;
 	int bb_fd, pfs_fd, *pipefd;
 
 	{
@@ -176,9 +174,15 @@ void drainer::close(const message &msg)
 		}
 	}
 
-	if (shm_cfg->lazy_fsync_enabled)
+	if (msg.flags & FSYNC_CLOSE_WAIT) {
 		if (::fsync(pfs_fd) == -1)
 			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+		shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
+		(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
+	} else if (msg.flags & FSYNC_CLOSE_NOWAIT) {
+		if (::fsync(pfs_fd) == -1)
+			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+	}
 
 	delete[] pipefd;
 	segment->deallocate(shm_fq);
@@ -228,7 +232,7 @@ void drainer::writev(const message &msg)
 
 void drainer::fsync(const message &msg)
 {
-	if (shm_cfg->lazy_fsync_enabled)
+	if (!(msg.flags & FSYNC_NORMAL))
 		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
 
 	try {
@@ -240,7 +244,7 @@ void drainer::fsync(const message &msg)
 
 void drainer::fdatasync(const message &msg)
 {
-	if (shm_cfg->lazy_fsync_enabled)
+	if (!(msg.flags & FSYNC_NORMAL))
 		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
 	try {
