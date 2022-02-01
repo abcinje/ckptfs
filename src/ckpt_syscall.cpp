@@ -70,7 +70,7 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	message::handle_vec handles = {
+	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
 	fq->issue(message(SYS_read, ofid, 0, 0, handles));
@@ -172,7 +172,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	message::handle_vec handles = {
+	message::shm_handles handles = {
 		.fq_handle = fq_handle,
 		.pathname_handle = pathname_handle,
 		.synced_handle = synced_handle,
@@ -220,7 +220,7 @@ int ckpt::close(int fd, int *result)
 		new (shm_synced) bi::interprocess_semaphore(0);
 		synced_handle = segment->get_handle_from_address(shm_synced);
 
-		message::handle_vec handles = {
+		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
 		fq->issue(message(SYS_close, ofid, 0, 0, handles, FSYNC_CLOSE_WAIT));
@@ -354,7 +354,7 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	message::handle_vec handles = {
+	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
 	fq->issue(message(SYS_pread64, ofid, 0, 0, handles));
@@ -429,7 +429,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	new (shm_synced) bi::interprocess_semaphore(0);
 	synced_handle = segment->get_handle_from_address(shm_synced);
 
-	message::handle_vec handles = {
+	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
 	fq->issue(message(SYS_readv, ofid, 0, 0, handles));
@@ -504,7 +504,7 @@ int ckpt::fsync(int fd, int *result)
 		new (shm_synced) bi::interprocess_semaphore(0);
 		synced_handle = segment->get_handle_from_address(shm_synced);
 
-		message::handle_vec handles = {
+		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
 		fq->issue(message(SYS_fsync, ofid, 0, 0, handles, FSYNC_NORMAL));
@@ -540,7 +540,7 @@ int ckpt::fdatasync(int fd, int *result)
 		new (shm_synced) bi::interprocess_semaphore(0);
 		synced_handle = segment->get_handle_from_address(shm_synced);
 
-		message::handle_vec handles = {
+		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
 		fq->issue(message(SYS_fdatasync, ofid, 0, 0, handles, FSYNC_NORMAL));

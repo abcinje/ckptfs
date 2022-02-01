@@ -19,13 +19,13 @@ public:
 	uint64_t ofid;
 	off_t offset;
 	size_t len;
-	struct handle_vec {
+	struct shm_handles {
 		shm_handle fq_handle, pathname_handle, synced_handle;
 	} handles;
 	int flags;
 
 	message(void);
-	message(long syscall, uint64_t ofid, off_t offset, size_t len, handle_vec handles = {}, int flags = 0);
+	message(long syscall, uint64_t ofid, off_t offset, size_t len, shm_handles handles = {}, int flags = 0);
 };
 
 #endif //CKPTFS_MESSAGE_HPP
