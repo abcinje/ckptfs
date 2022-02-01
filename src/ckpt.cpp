@@ -79,7 +79,7 @@ static void init_path(void)
 	if (!(ckpt = getenv("CKPT")) || !(bb = getenv("BB")) || !(pfs = getenv("PFS")))
 		error("Environment variables named 'CKPT', 'BB', and 'PFS' must be specified.");
 
-	if (!(ckpt = realpath(ckpt, NULL)) || !(bb = realpath(bb, NULL)) || !(pfs = realpath(pfs, NULL)))
+	if (!(ckpt = realpath(ckpt, nullptr)) || !(bb = realpath(bb, nullptr)) || !(pfs = realpath(pfs, nullptr)))
 		error("realpath() failed (" + std::string(strerror(errno)) + ")");
 
 	ckpt_dir = new std::string(ckpt);
