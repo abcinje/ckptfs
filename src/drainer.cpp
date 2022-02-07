@@ -28,9 +28,13 @@ static void drain(message_queue *fq)
 
 		switch (msg.syscall) {
 			case SYS_read:
+			case SYS_pread64:
+			case SYS_readv:
 				drainer::read(msg);
 				break;
 			case SYS_write:
+			case SYS_pwrite64:
+			case SYS_writev:
 				drainer::write(msg);
 				break;
 			case SYS_open:	// start
@@ -39,18 +43,6 @@ static void drain(message_queue *fq)
 			case SYS_close:	// stop
 				drainer::close(msg);
 				return;
-			case SYS_pread64:
-				drainer::pread(msg);
-				break;
-			case SYS_pwrite64:
-				drainer::pwrite(msg);
-				break;
-			case SYS_readv:
-				drainer::readv(msg);
-				break;
-			case SYS_writev:
-				drainer::writev(msg);
-				break;
 			case SYS_fsync:
 				drainer::fsync(msg);
 				break;

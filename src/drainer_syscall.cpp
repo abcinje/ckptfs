@@ -194,42 +194,6 @@ void drainer::close(const message &msg)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
 }
 
-void drainer::pread(const message &msg)
-{
-	try {
-		do_fsync(msg, true);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::pread() failed (" + std::string(e.what()) + ")");
-	}
-}
-
-void drainer::pwrite(const message &msg)
-{
-	try {
-		do_write(msg);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::pwrite() failed (" + std::string(e.what()) + ")");
-	}
-}
-
-void drainer::readv(const message &msg)
-{
-	try {
-		do_fsync(msg, true);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::readv() failed (" + std::string(e.what()) + ")");
-	}
-}
-
-void drainer::writev(const message &msg)
-{
-	try {
-		do_write(msg);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::writev() failed (" + std::string(e.what()) + ")");
-	}
-}
-
 void drainer::fsync(const message &msg)
 {
 	if (!(msg.flags & FSYNC_NORMAL))
