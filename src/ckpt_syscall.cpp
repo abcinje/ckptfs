@@ -36,8 +36,18 @@ extern long batch_size;
 extern bi::managed_shared_memory *segment;
 extern message_queue *mq;
 
+struct finfo {
+	uint64_t ofid;
+	int pfs_fd;
+	off_t offset;
+	off_t len;
+	off_t boffset;
+	size_t bcount;
+	message_queue *fq;
+};
+
 static std::shared_mutex fmap_mutex;
-static std::unordered_map<int, std::tuple<uint64_t, int, off_t, off_t, off_t, size_t, message_queue *>> fmap; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, boffset, bcount, fq)
+static std::unordered_map<int, finfo> fmap; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, boffset, bcount, fq)
 
 
 
@@ -60,12 +70,12 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			offset = &std::get<2>(it->second);
-			boffset = std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			pfs_fd = it->second.pfs_fd;
+			offset = &it->second.offset;
+			boffset = it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 		} else {
 			return 1;
 		}
@@ -109,13 +119,13 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			offset = &std::get<2>(it->second);
-			len = &std::get<3>(it->second);
-			boffset = &std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			pfs_fd = it->second.pfs_fd;
+			offset = &it->second.offset;
+			len = &it->second.len;
+			boffset = &it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 		} else {
 			return 1;
 		}
@@ -235,10 +245,10 @@ int ckpt::close(int fd, int *result)
 		std::scoped_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			boffset = std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			boffset = it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 			fmap.erase(it);
 		} else {
 			return 1;
@@ -306,7 +316,7 @@ int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			pfs_fd = std::get<1>(it->second);
+			pfs_fd = it->second.pfs_fd;
 		} else {
 			return 1;
 		}
@@ -351,7 +361,7 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			file_offset = &std::get<2>(it->second);
+			file_offset = &it->second.offset;
 		} else {
 			return 1;
 		}
@@ -379,11 +389,11 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			boffset = std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			pfs_fd = it->second.pfs_fd;
+			boffset = it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 		} else {
 			return 1;
 		}
@@ -425,12 +435,12 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			len = &std::get<3>(it->second);
-			boffset = &std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			pfs_fd = it->second.pfs_fd;
+			len = &it->second.len;
+			boffset = &it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 		} else {
 			return 1;
 		}
@@ -478,12 +488,12 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			offset = &std::get<2>(it->second);
-			boffset = std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			pfs_fd = it->second.pfs_fd;
+			offset = &it->second.offset;
+			boffset = it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 		} else {
 			return 1;
 		}
@@ -527,13 +537,13 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			offset = &std::get<2>(it->second);
-			len = &std::get<3>(it->second);
-			boffset = &std::get<4>(it->second);
-			bcount = &std::get<5>(it->second);
-			fq = std::get<6>(it->second);
+			ofid = it->second.ofid;
+			pfs_fd = it->second.pfs_fd;
+			offset = &it->second.offset;
+			len = &it->second.len;
+			boffset = &it->second.boffset;
+			bcount = &it->second.bcount;
+			fq = it->second.fq;
 		} else {
 			return 1;
 		}
@@ -580,10 +590,10 @@ int ckpt::fsync(int fd, int *result)
 			std::shared_lock lock(fmap_mutex);
 			auto it = fmap.find(fd);
 			if (it != fmap.end()) {
-				ofid = std::get<0>(it->second);
-				boffset = std::get<4>(it->second);
-				bcount = &std::get<5>(it->second);
-				fq = std::get<6>(it->second);
+				ofid = it->second.ofid;
+				boffset = it->second.boffset;
+				bcount = &it->second.bcount;
+				fq = it->second.fq;
 			} else {
 				return 1;
 			}
@@ -625,10 +635,10 @@ int ckpt::fdatasync(int fd, int *result)
 			std::shared_lock lock(fmap_mutex);
 			auto it = fmap.find(fd);
 			if (it != fmap.end()) {
-				ofid = std::get<0>(it->second);
-				boffset = std::get<4>(it->second);
-				bcount = &std::get<5>(it->second);
-				fq = std::get<6>(it->second);
+				ofid = it->second.ofid;
+				boffset = it->second.boffset;
+				bcount = &it->second.bcount;
+				fq = it->second.fq;
 			} else {
 				return 1;
 			}

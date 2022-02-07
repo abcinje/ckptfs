@@ -29,8 +29,15 @@ using message_queue = queue<message>;
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 
+struct finfo {
+	int bb_fd;
+	int pfs_fd;
+	void *fq;
+	int *pipe;
+};
+
 static std::shared_mutex fmap_mutex;
-static std::unordered_map<uint64_t, std::tuple<int, int, void *, int *>> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
+static std::unordered_map<uint64_t, finfo> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
 
 
 
@@ -47,7 +54,7 @@ void drainer::read(const message &msg)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
-			pfs_fd = std::get<1>(it->second);
+			pfs_fd = it->second.pfs_fd;
 		} else {
 			throw std::logic_error("drainer::read() failed (no such key)");
 		}
@@ -70,9 +77,9 @@ void drainer::write(const message &msg)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
-			bb_fd = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			pipefd = std::get<3>(it->second);
+			bb_fd = it->second.bb_fd;
+			pfs_fd = it->second.pfs_fd;
+			pipefd = it->second.pipe;
 		} else {
 			throw std::logic_error("drainer::write() failed (no such key)");
 		}
@@ -141,10 +148,10 @@ void drainer::close(const message &msg)
 		std::scoped_lock lock(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
-			bb_fd = std::get<0>(it->second);
-			pfs_fd = std::get<1>(it->second);
-			shm_fq = std::get<2>(it->second);
-			pipefd = std::get<3>(it->second);
+			bb_fd = it->second.bb_fd;
+			pfs_fd = it->second.pfs_fd;
+			shm_fq = it->second.fq;
+			pipefd = it->second.pipe;
 			fmap.erase(it);
 		} else {
 			throw std::logic_error("drainer::close() failed (no such key)");
@@ -183,7 +190,7 @@ void drainer::fsync(const message &msg)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
-			pfs_fd = std::get<1>(it->second);
+			pfs_fd = it->second.pfs_fd;
 		} else {
 			throw std::logic_error("drainer::fsync() failed (no such key)");
 		}
@@ -208,7 +215,7 @@ void drainer::fdatasync(const message &msg)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
-			pfs_fd = std::get<1>(it->second);
+			pfs_fd = it->second.pfs_fd;
 		} else {
 			throw std::logic_error("drainer::fdatasync() failed (no such key)");
 		}
