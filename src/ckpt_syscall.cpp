@@ -580,24 +580,25 @@ int ckpt::fsync(int fd, int *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
+
+	decltype(fmap.begin()) it;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
+	{
+		std::shared_lock lock(fmap_mutex);
+		it = fmap.find(fd);
+		if (it == fmap.end())
+			return 1;
+	}
+
 	if (fsync_lazy_level == 0) {
-		{
-			std::shared_lock lock(fmap_mutex);
-			auto it = fmap.find(fd);
-			if (it != fmap.end()) {
-				ofid = it->second.ofid;
-				boffset = it->second.boffset;
-				bcount = &it->second.bcount;
-				fq = it->second.fq;
-			} else {
-				return 1;
-			}
-		}
+		ofid = it->second.ofid;
+		boffset = it->second.boffset;
+		bcount = &it->second.bcount;
+		fq = it->second.fq;
 
 		if (*bcount) {
 			fq->issue(message(SYS_write, ofid, boffset, *bcount));
@@ -625,24 +626,25 @@ int ckpt::fdatasync(int fd, int *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
+
+	decltype(fmap.begin()) it;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
+	{
+		std::shared_lock lock(fmap_mutex);
+		it = fmap.find(fd);
+		if (it == fmap.end())
+			return 1;
+	}
+
 	if (fsync_lazy_level == 0) {
-		{
-			std::shared_lock lock(fmap_mutex);
-			auto it = fmap.find(fd);
-			if (it != fmap.end()) {
-				ofid = it->second.ofid;
-				boffset = it->second.boffset;
-				bcount = &it->second.bcount;
-				fq = it->second.fq;
-			} else {
-				return 1;
-			}
-		}
+		ofid = it->second.ofid;
+		boffset = it->second.boffset;
+		bcount = &it->second.bcount;
+		fq = it->second.fq;
 
 		if (*bcount) {
 			fq->issue(message(SYS_write, ofid, boffset, *bcount));
