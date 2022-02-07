@@ -33,11 +33,11 @@ struct finfo {
 	int bb_fd;
 	int pfs_fd;
 	void *fq;
-	int *pipe;
+	int *pipefd;
 };
 
 static std::shared_mutex fmap_mutex;
-static std::unordered_map<uint64_t, finfo> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
+static std::unordered_map<uint64_t, finfo> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipefd)
 
 
 
@@ -79,7 +79,7 @@ void drainer::write(const message &msg)
 		if (it != fmap.end()) {
 			bb_fd = it->second.bb_fd;
 			pfs_fd = it->second.pfs_fd;
-			pipefd = it->second.pipe;
+			pipefd = it->second.pipefd;
 		} else {
 			throw std::logic_error("drainer::write() failed (no such key)");
 		}
@@ -151,7 +151,7 @@ void drainer::close(const message &msg)
 			bb_fd = it->second.bb_fd;
 			pfs_fd = it->second.pfs_fd;
 			shm_fq = it->second.fq;
-			pipefd = it->second.pipe;
+			pipefd = it->second.pipefd;
 			fmap.erase(it);
 		} else {
 			throw std::logic_error("drainer::close() failed (no such key)");
