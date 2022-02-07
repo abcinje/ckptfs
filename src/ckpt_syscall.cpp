@@ -31,12 +31,13 @@ extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 
 /* config */
 extern int fsync_lazy_level;
+extern long batch_size;
 
 extern bi::managed_shared_memory *segment;
 extern message_queue *mq;
 
 static std::shared_mutex fmap_mutex;
-static std::unordered_map<int, std::tuple<uint64_t, int, off_t, off_t, message_queue *>> fmap; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, fq)
+static std::unordered_map<int, std::tuple<uint64_t, int, off_t, off_t, off_t, size_t, message_queue *>> fmap; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, boffset, bcount, fq)
 
 
 
@@ -51,6 +52,8 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
+	off_t boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -60,10 +63,17 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 			ofid = std::get<0>(it->second);
 			pfs_fd = std::get<1>(it->second);
 			offset = &std::get<2>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 		} else {
 			return 1;
 		}
+	}
+
+	if (*bcount) {
+		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		*bcount = 0;
 	}
 
 	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
@@ -91,6 +101,8 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
+	off_t *boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -101,22 +113,36 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 			pfs_fd = std::get<1>(it->second);
 			offset = &std::get<2>(it->second);
 			len = &std::get<3>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = &std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 		} else {
 			return 1;
 		}
 	}
 
+	if (*boffset + *bcount != *offset) {
+		if (*bcount) {
+			fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+			*bcount = 0;
+		}
+		*boffset = *offset;
+	}
+
 	if ((*result = syscall_no_intercept(SYS_write, fd, buf, count)) == -1)
 		error("write() failed (" + std::string(strerror(errno)) + ")");
-
-	fq->issue(message(SYS_write, ofid, *offset, *result));
 
 	*offset += *result;
 	if (*len < *offset) {
 		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, *offset) == -1)
 			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
 		*len = *offset;
+	}
+
+	*bcount += *result;
+	if (*bcount >= batch_size) {
+		fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+		*bcount = 0;
 	}
 
 	return 0;
@@ -188,7 +214,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 	{
 		std::scoped_lock lock(fmap_mutex);
-		if (!fmap.insert({bb_fd, {ofid, pfs_fd, 0, len, static_cast<message_queue *>(shm_fq)}}).second)
+		if (!fmap.insert({bb_fd, {ofid, pfs_fd, 0, len, 0, 0, static_cast<message_queue *>(shm_fq)}}).second)
 			error("ckpt::open() failed (the same key already exists)");
 	}
 
@@ -201,6 +227,8 @@ int ckpt::close(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 	uint64_t ofid;
+	off_t boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -208,11 +236,18 @@ int ckpt::close(int fd, int *result)
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
 			ofid = std::get<0>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 			fmap.erase(it);
 		} else {
 			return 1;
 		}
+	}
+
+	if (*bcount) {
+		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		*bcount = 0;
 	}
 
 	if (fsync_lazy_level == 1) {
@@ -336,6 +371,8 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	shm_handle synced_handle;
 	uint64_t ofid;
 	int pfs_fd;
+	off_t boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -344,10 +381,17 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 		if (it != fmap.end()) {
 			ofid = std::get<0>(it->second);
 			pfs_fd = std::get<1>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 		} else {
 			return 1;
 		}
+	}
+
+	if (*bcount) {
+		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		*bcount = 0;
 	}
 
 	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
@@ -373,6 +417,8 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *len;
+	off_t *boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -382,22 +428,36 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 			ofid = std::get<0>(it->second);
 			pfs_fd = std::get<1>(it->second);
 			len = &std::get<3>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = &std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 		} else {
 			return 1;
 		}
 	}
 
+	if (*boffset + *bcount != offset) {
+		if (*bcount) {
+			fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+			*bcount = 0;
+		}
+		*boffset = offset;
+	}
+
 	if ((*result = syscall_no_intercept(SYS_pwrite64, fd, buf, count, offset)) == -1)
 		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
-
-	fq->issue(message(SYS_pwrite64, ofid, offset, *result));
 
 	offset += *result;
 	if (*len < offset) {
 		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, offset) == -1)
 			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
 		*len = offset;
+	}
+
+	*bcount += *result;
+	if (*bcount >= batch_size) {
+		fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+		*bcount = 0;
 	}
 
 	return 0;
@@ -410,6 +470,8 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
+	off_t boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -419,10 +481,17 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 			ofid = std::get<0>(it->second);
 			pfs_fd = std::get<1>(it->second);
 			offset = &std::get<2>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 		} else {
 			return 1;
 		}
+	}
+
+	if (*bcount) {
+		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		*bcount = 0;
 	}
 
 	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
@@ -450,6 +519,8 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
+	off_t *boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	{
@@ -460,22 +531,36 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 			pfs_fd = std::get<1>(it->second);
 			offset = &std::get<2>(it->second);
 			len = &std::get<3>(it->second);
-			fq = std::get<4>(it->second);
+			boffset = &std::get<4>(it->second);
+			bcount = &std::get<5>(it->second);
+			fq = std::get<6>(it->second);
 		} else {
 			return 1;
 		}
 	}
 
+	if (*boffset + *bcount != *offset) {
+		if (*bcount) {
+			fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+			*bcount = 0;
+		}
+		*boffset = *offset;
+	}
+
 	if ((*result = syscall_no_intercept(SYS_writev, fd, iov, iovcnt)) == -1)
 		error("writev() failed (" + std::string(strerror(errno)) + ")");
-
-	fq->issue(message(SYS_writev, ofid, *offset, *result));
 
 	*offset += *result;
 	if (*len < *offset) {
 		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, *offset) == -1)
 			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
 		*len = *offset;
+	}
+
+	*bcount += *result;
+	if (*bcount >= batch_size) {
+		fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+		*bcount = 0;
 	}
 
 	return 0;
@@ -486,6 +571,8 @@ int ckpt::fsync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 	uint64_t ofid;
+	off_t boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	if (fsync_lazy_level == 0) {
@@ -494,10 +581,17 @@ int ckpt::fsync(int fd, int *result)
 			auto it = fmap.find(fd);
 			if (it != fmap.end()) {
 				ofid = std::get<0>(it->second);
-				fq = std::get<4>(it->second);
+				boffset = std::get<4>(it->second);
+				bcount = &std::get<5>(it->second);
+				fq = std::get<6>(it->second);
 			} else {
 				return 1;
 			}
+		}
+
+		if (*bcount) {
+			fq->issue(message(SYS_write, ofid, boffset, *bcount));
+			*bcount = 0;
 		}
 
 		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
@@ -522,6 +616,8 @@ int ckpt::fdatasync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 	uint64_t ofid;
+	off_t boffset;
+	size_t *bcount;
 	message_queue *fq;
 
 	if (fsync_lazy_level == 0) {
@@ -530,10 +626,17 @@ int ckpt::fdatasync(int fd, int *result)
 			auto it = fmap.find(fd);
 			if (it != fmap.end()) {
 				ofid = std::get<0>(it->second);
-				fq = std::get<4>(it->second);
+				boffset = std::get<4>(it->second);
+				bcount = &std::get<5>(it->second);
+				fq = std::get<6>(it->second);
 			} else {
 				return 1;
 			}
+		}
+
+		if (*bcount) {
+			fq->issue(message(SYS_write, ofid, boffset, *bcount));
+			*bcount = 0;
 		}
 
 		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));

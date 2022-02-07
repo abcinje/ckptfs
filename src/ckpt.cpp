@@ -22,6 +22,7 @@ std::string *ckpt_dir, *bb_dir, *pfs_dir;
 
 /* config */
 int fsync_lazy_level;
+long batch_size;
 
 bi::managed_shared_memory *segment;
 message_queue *mq;
@@ -102,9 +103,11 @@ static void exit_path(void)
 
 static void init_config(void)
 {
+	char *fsync_lazy_level_env;
+	char *batch_size_env;
+
 	char *endptr;
 
-	char *fsync_lazy_level_env;
 	if (fsync_lazy_level_env = getenv("FSYNC_LAZY_LEVEL")) {
 		unsigned long ret = strtoul(fsync_lazy_level_env, &endptr, 0);
 		if (*endptr != '\0' || ret == ULONG_MAX)
@@ -114,6 +117,16 @@ static void init_config(void)
 			error("init_config() failed (invalid input)");
 
 		fsync_lazy_level = static_cast<int>(ret);
+	}
+
+	if (batch_size_env = getenv("BATCH_SIZE")) {
+		unsigned long ret = strtoul(batch_size_env, &endptr, 0);
+		if (*endptr != '\0' || ret == ULONG_MAX)
+			error("strtoul() failed (invalid input)");
+
+		batch_size = static_cast<long>(ret);
+		if (batch_size < 0)
+			error("init_config() failed (invalid input)");
 	}
 }
 
