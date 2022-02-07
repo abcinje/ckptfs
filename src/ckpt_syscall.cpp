@@ -401,7 +401,7 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
-	fq->issue(message(SYS_pread64, ofid, 0, 0, handles));
+	fq->issue(message(SYS_read, ofid, 0, 0, handles));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -501,7 +501,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
-	fq->issue(message(SYS_readv, ofid, 0, 0, handles));
+	fq->issue(message(SYS_read, ofid, 0, 0, handles));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);

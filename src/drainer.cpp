@@ -28,13 +28,9 @@ static void drain(message_queue *fq)
 
 		switch (msg.syscall) {
 			case SYS_read:
-			case SYS_pread64:
-			case SYS_readv:
 				drainer::read(msg);
 				break;
 			case SYS_write:
-			case SYS_pwrite64:
-			case SYS_writev:
 				drainer::write(msg);
 				break;
 			case SYS_open:	// start
