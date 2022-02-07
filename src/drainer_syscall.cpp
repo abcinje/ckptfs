@@ -32,7 +32,35 @@ extern bi::managed_shared_memory *segment;
 static std::shared_mutex fmap_mutex;
 static std::unordered_map<uint64_t, std::tuple<int, int, void *, int *>> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipe)
 
-static void do_write(const message &msg)
+
+
+/*******************
+ * => Syscalls
+ *******************/
+
+void drainer::read(const message &msg)
+{
+	void *shm_synced;
+	int pfs_fd;
+
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(msg.ofid);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<1>(it->second);
+		} else {
+			throw std::logic_error("drainer::read() failed (no such key)");
+		}
+	}
+
+	if (::fdatasync(pfs_fd) == -1)
+		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
+
+	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
+}
+
+void drainer::write(const message &msg)
 {
 	int bb_fd, pfs_fd, *pipefd;
 	off_t offset0, offset1;
@@ -46,13 +74,13 @@ static void do_write(const message &msg)
 			pfs_fd = std::get<1>(it->second);
 			pipefd = std::get<3>(it->second);
 		} else {
-			throw std::logic_error("no such key");
+			throw std::logic_error("drainer::write() failed (no such key)");
 		}
 	}
 
 	offset0 = offset1 = msg.offset;
 	if ((len = msg.len) < 0)
-		throw std::overflow_error("do_write() failed (integer overflow)");
+		throw std::overflow_error("drainer::write() failed (integer overflow)");
 
 	do {
 		spliced = (len < PIPE_CAPACITY) ? len : PIPE_CAPACITY;
@@ -65,57 +93,6 @@ static void do_write(const message &msg)
 
 		len -= spliced;
 	} while (len > 0);
-}
-
-static void do_fsync(const message &msg, bool data_only)
-{
-	void *shm_synced;
-	int pfs_fd;
-
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(msg.ofid);
-		if (it != fmap.end()) {
-			pfs_fd = std::get<1>(it->second);
-		} else {
-			throw std::logic_error("no such key");
-		}
-	}
-
-	if (data_only) {
-		if (::fdatasync(pfs_fd) == -1)
-			throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
-	} else {
-		if (::fsync(pfs_fd) == -1)
-			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
-	}
-
-	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
-}
-
-
-
-/*******************
- * => Syscalls
- *******************/
-
-void drainer::read(const message &msg)
-{
-	try {
-		do_fsync(msg, true);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::read() failed (" + std::string(e.what()) + ")");
-	}
-}
-
-void drainer::write(const message &msg)
-{
-	try {
-		do_write(msg);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::write() failed (" + std::string(e.what()) + ")");
-	}
 }
 
 void drainer::open(const message &msg)
@@ -196,24 +173,50 @@ void drainer::close(const message &msg)
 
 void drainer::fsync(const message &msg)
 {
+	void *shm_synced;
+	int pfs_fd;
+
 	if (!(msg.flags & FSYNC_NORMAL))
 		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
 
-	try {
-		do_fsync(msg, false);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::fsync() failed (" + std::string(e.what()) + ")");
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(msg.ofid);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<1>(it->second);
+		} else {
+			throw std::logic_error("drainer::fsync() failed (no such key)");
+		}
 	}
+
+	if (::fsync(pfs_fd) == -1)
+		throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+
+	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 }
 
 void drainer::fdatasync(const message &msg)
 {
+	void *shm_synced;
+	int pfs_fd;
+
 	if (!(msg.flags & FSYNC_NORMAL))
 		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
-	try {
-		do_fsync(msg, true);
-	} catch (std::logic_error &e) {
-		throw std::logic_error("drainer::fdatasync() failed (" + std::string(e.what()) + ")");
+	{
+		std::shared_lock lock(fmap_mutex);
+		auto it = fmap.find(msg.ofid);
+		if (it != fmap.end()) {
+			pfs_fd = std::get<1>(it->second);
+		} else {
+			throw std::logic_error("drainer::fdatasync() failed (no such key)");
+		}
 	}
+
+	if (::fdatasync(pfs_fd) == -1)
+		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
+
+	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
+	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 }
