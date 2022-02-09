@@ -36,6 +36,9 @@ extern long batch_size;
 extern bi::managed_shared_memory *segment;
 extern message_queue *mq;
 
+void print(std::string msg);
+void error(std::string msg);
+
 struct finfo {
 	uint64_t ofid;
 	int pfs_fd;

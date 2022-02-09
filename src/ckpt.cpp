@@ -27,6 +27,20 @@ long batch_size;
 bi::managed_shared_memory *segment;
 message_queue *mq;
 
+void print(std::string msg)
+{
+	msg += '\n';
+	syscall_no_intercept(SYS_write, STDOUT_FILENO, msg.data(), msg.size());
+}
+
+void error(std::string msg)
+{
+	msg += '\n';
+	syscall_no_intercept(SYS_write, STDERR_FILENO, msg.data(), msg.size());
+
+	exit(EXIT_FAILURE);
+}
+
 static int hook(long syscall_number, long arg0, long arg1, long arg2, long arg3, long arg4, long arg5, long *result)
 {
 	switch (syscall_number) {
