@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <iomanip>
 #include <sstream>
 #include <stdexcept>
 #include <vector>
@@ -35,4 +36,11 @@ std::string resolve_abspath(std::string path)
 		resolved_path += '/' + *it;
 
 	return resolved_path;
+}
+
+std::string to_hex(uint64_t i)
+{
+	std::stringstream stream;
+	stream << std::setfill('0') << std::setw(16) << std::hex << i;
+	return stream.str();
 }
