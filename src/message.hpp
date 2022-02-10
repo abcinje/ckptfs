@@ -8,10 +8,13 @@
 namespace bi = boost::interprocess;
 using shm_handle = bi::managed_shared_memory::handle_t;
 
-#define FSYNC_NORMAL		0x1	// fsync_lazy_level == 0
-#define FSYNC_CLOSE_WAIT	0x2	// fsync_lazy_level == 1
-#define FSYNC_CLOSE_NOWAIT	0x4	// fsync_lazy_level == 2
-#define FSYNC_IGNORE		0x8	// fsync_lazy_level == 3
+enum {
+	CKPT_S_NORMAL		= 0x01,	// fsync_lazy_level == 0
+	CKPT_S_CLOSEWAIT	= 0x02,	// fsync_lazy_level == 1
+	CKPT_S_CLOSENOWAIT	= 0x04,	// fsync_lazy_level == 2
+	CKPT_S_IGNORE		= 0x08,	// fsync_lazy_level == 3 (unused)
+	CKPT_S_DATAONLY		= 0x10,	// fdatasync()
+};
 
 class message {
 public:

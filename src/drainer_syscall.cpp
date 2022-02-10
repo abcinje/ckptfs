@@ -158,14 +158,16 @@ void drainer::close(const message &msg)
 		}
 	}
 
-	if (msg.flags & FSYNC_CLOSE_WAIT) {
-		if (::fsync(pfs_fd) == -1)
-			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+	if (msg.flags & CKPT_S_CLOSEWAIT) {
+		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
+		if (synchronize(pfs_fd) == -1)
+			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 		shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
-	} else if (msg.flags & FSYNC_CLOSE_NOWAIT) {
-		if (::fsync(pfs_fd) == -1)
-			throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
+	} else if (msg.flags & CKPT_S_CLOSENOWAIT) {
+		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
+		if (synchronize(pfs_fd) == -1)
+			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 	}
 
 	delete[] pipefd;
@@ -183,7 +185,7 @@ void drainer::fsync(const message &msg)
 	void *shm_synced;
 	int pfs_fd;
 
-	if (!(msg.flags & FSYNC_NORMAL))
+	if (!(msg.flags & CKPT_S_NORMAL))
 		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
 
 	{
@@ -208,7 +210,7 @@ void drainer::fdatasync(const message &msg)
 	void *shm_synced;
 	int pfs_fd;
 
-	if (!(msg.flags & FSYNC_NORMAL))
+	if (!(msg.flags & CKPT_S_NORMAL))
 		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
 	{

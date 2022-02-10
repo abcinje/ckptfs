@@ -46,6 +46,8 @@ struct finfo {
 	off_t len;
 	off_t boffset;
 	size_t bcount;
+	bool fsynced;
+	bool fdatasynced;
 	message_queue *fq;
 };
 
@@ -227,7 +229,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 	{
 		std::scoped_lock lock(fmap_mutex);
-		if (!fmap.insert({bb_fd, {ofid, pfs_fd, 0, len, 0, 0, static_cast<message_queue *>(shm_fq)}}).second)
+		if (!fmap.insert({bb_fd, {ofid, pfs_fd, 0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq)}}).second)
 			error("ckpt::open() failed (the same key already exists)");
 	}
 
@@ -242,6 +244,8 @@ int ckpt::close(int fd, int *result)
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
+	bool fsynced;
+	bool fdatasynced;
 	message_queue *fq;
 
 	{
@@ -251,6 +255,8 @@ int ckpt::close(int fd, int *result)
 			ofid = it->second.ofid;
 			boffset = it->second.boffset;
 			bcount = &it->second.bcount;
+			fsynced = it->second.fsynced;
+			fdatasynced = it->second.fdatasynced;
 			fq = it->second.fq;
 			fmap.erase(it);
 		} else {
@@ -263,20 +269,28 @@ int ckpt::close(int fd, int *result)
 		*bcount = 0;
 	}
 
-	if (fsync_lazy_level == 1) {
-		shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
-		new (shm_synced) bi::interprocess_semaphore(0);
-		synced_handle = segment->get_handle_from_address(shm_synced);
+	if (fsynced || fdatasynced) {
+		int flags = fsynced ? 0 : CKPT_S_DATAONLY;
 
-		message::shm_handles handles = {
-			.synced_handle = synced_handle,
-		};
-		fq->issue(message(SYS_close, ofid, 0, 0, handles, FSYNC_CLOSE_WAIT));
-		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
+		if (fsync_lazy_level == 1) {
+			flags |= CKPT_S_CLOSEWAIT;
 
-		segment->deallocate(shm_synced);
-	} else if (fsync_lazy_level == 2) {
-		fq->issue(message(SYS_close, ofid, 0, 0, {}, FSYNC_CLOSE_NOWAIT));
+			shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
+			new (shm_synced) bi::interprocess_semaphore(0);
+			synced_handle = segment->get_handle_from_address(shm_synced);
+
+			message::shm_handles handles = {
+				.synced_handle = synced_handle,
+			};
+			fq->issue(message(SYS_close, ofid, 0, 0, handles, flags));
+			(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
+
+			segment->deallocate(shm_synced);
+		} else if (fsync_lazy_level == 2) {
+			flags |= CKPT_S_CLOSENOWAIT;
+
+			fq->issue(message(SYS_close, ofid, 0, 0, {}, flags));
+		}
 	}
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)
@@ -615,10 +629,12 @@ int ckpt::fsync(int fd, int *result)
 		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fsync, ofid, 0, 0, handles, FSYNC_NORMAL));
+		fq->issue(message(SYS_fsync, ofid, 0, 0, handles, CKPT_S_NORMAL));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
+	} else if (fsync_lazy_level < 3) {
+		it->second.fsynced = true;
 	}
 
 	*result = 0;
@@ -661,10 +677,12 @@ int ckpt::fdatasync(int fd, int *result)
 		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fdatasync, ofid, 0, 0, handles, FSYNC_NORMAL));
+		fq->issue(message(SYS_fdatasync, ofid, 0, 0, handles, CKPT_S_NORMAL));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
+	} else if (fsync_lazy_level < 3) {
+		it->second.fdatasynced = true;
 	}
 
 	*result = 0;
