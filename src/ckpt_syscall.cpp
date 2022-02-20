@@ -247,7 +247,7 @@ int ckpt::close(int fd, int *result)
 	shm_handle synced_handle;
 	uint64_t ofid;
 	off_t boffset;
-	size_t *bcount;
+	size_t bcount;
 	bool fsynced;
 	bool fdatasynced;
 	message_queue *fq;
@@ -260,7 +260,7 @@ int ckpt::close(int fd, int *result)
 
 			ofid = fi->ofid;
 			boffset = fi->boffset;
-			bcount = &fi->bcount;
+			bcount = fi->bcount;
 			fsynced = fi->fsynced;
 			fdatasynced = fi->fdatasynced;
 			fq = fi->fq;
@@ -270,10 +270,8 @@ int ckpt::close(int fd, int *result)
 		}
 	}
 
-	if (*bcount) {
-		fq->issue(message(SYS_write, ofid, boffset, *bcount));
-		*bcount = 0;
-	}
+	if (bcount)
+		fq->issue(message(SYS_write, ofid, boffset, bcount));
 
 	if (fsynced || fdatasynced) {
 		int flags = fsynced ? 0 : CKPT_S_DATAONLY;
