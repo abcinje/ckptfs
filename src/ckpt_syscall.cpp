@@ -75,12 +75,14 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			pfs_fd = it->second.pfs_fd;
-			offset = &it->second.offset;
-			boffset = it->second.boffset;
-			bcount = &it->second.bcount;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			pfs_fd = fi->pfs_fd;
+			offset = &fi->offset;
+			boffset = fi->boffset;
+			bcount = &fi->bcount;
+			fq = fi->fq;
 		} else {
 			return 1;
 		}
@@ -124,13 +126,15 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			pfs_fd = it->second.pfs_fd;
-			offset = &it->second.offset;
-			len = &it->second.len;
-			boffset = &it->second.boffset;
-			bcount = &it->second.bcount;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			pfs_fd = fi->pfs_fd;
+			offset = &fi->offset;
+			len = &fi->len;
+			boffset = &fi->boffset;
+			bcount = &fi->bcount;
+			fq = fi->fq;
 		} else {
 			return 1;
 		}
@@ -252,12 +256,14 @@ int ckpt::close(int fd, int *result)
 		std::scoped_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			boffset = it->second.boffset;
-			bcount = &it->second.bcount;
-			fsynced = it->second.fsynced;
-			fdatasynced = it->second.fdatasynced;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			boffset = fi->boffset;
+			bcount = &fi->bcount;
+			fsynced = fi->fsynced;
+			fdatasynced = fi->fdatasynced;
+			fq = fi->fq;
 			fmap.erase(it);
 		} else {
 			return 1;
@@ -333,7 +339,9 @@ int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			pfs_fd = it->second.pfs_fd;
+			auto fi = &it->second;
+
+			pfs_fd = fi->pfs_fd;
 		} else {
 			return 1;
 		}
@@ -378,7 +386,9 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			file_offset = &it->second.offset;
+			auto fi = &it->second;
+
+			file_offset = &fi->offset;
 		} else {
 			return 1;
 		}
@@ -406,11 +416,13 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			pfs_fd = it->second.pfs_fd;
-			boffset = it->second.boffset;
-			bcount = &it->second.bcount;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			pfs_fd = fi->pfs_fd;
+			boffset = fi->boffset;
+			bcount = &fi->bcount;
+			fq = fi->fq;
 		} else {
 			return 1;
 		}
@@ -452,12 +464,14 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			pfs_fd = it->second.pfs_fd;
-			len = &it->second.len;
-			boffset = &it->second.boffset;
-			bcount = &it->second.bcount;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			pfs_fd = fi->pfs_fd;
+			len = &fi->len;
+			boffset = &fi->boffset;
+			bcount = &fi->bcount;
+			fq = fi->fq;
 		} else {
 			return 1;
 		}
@@ -505,12 +519,14 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			pfs_fd = it->second.pfs_fd;
-			offset = &it->second.offset;
-			boffset = it->second.boffset;
-			bcount = &it->second.bcount;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			pfs_fd = fi->pfs_fd;
+			offset = &fi->offset;
+			boffset = fi->boffset;
+			bcount = &fi->bcount;
+			fq = fi->fq;
 		} else {
 			return 1;
 		}
@@ -554,13 +570,15 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		std::shared_lock lock(fmap_mutex);
 		auto it = fmap.find(fd);
 		if (it != fmap.end()) {
-			ofid = it->second.ofid;
-			pfs_fd = it->second.pfs_fd;
-			offset = &it->second.offset;
-			len = &it->second.len;
-			boffset = &it->second.boffset;
-			bcount = &it->second.bcount;
-			fq = it->second.fq;
+			auto fi = &it->second;
+
+			ofid = fi->ofid;
+			pfs_fd = fi->pfs_fd;
+			offset = &fi->offset;
+			len = &fi->len;
+			boffset = &fi->boffset;
+			bcount = &fi->bcount;
+			fq = fi->fq;
 		} else {
 			return 1;
 		}
@@ -598,7 +616,7 @@ int ckpt::fsync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 
-	decltype(fmap.begin()) it;
+	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
@@ -606,16 +624,19 @@ int ckpt::fsync(int fd, int *result)
 
 	{
 		std::shared_lock lock(fmap_mutex);
-		it = fmap.find(fd);
-		if (it == fmap.end())
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			fi = &it->second;
+		} else {
 			return 1;
+		}
 	}
 
 	if (fsync_lazy_level == 0) {
-		ofid = it->second.ofid;
-		boffset = it->second.boffset;
-		bcount = &it->second.bcount;
-		fq = it->second.fq;
+		ofid = fi->ofid;
+		boffset = fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
 
 		if (*bcount) {
 			fq->issue(message(SYS_write, ofid, boffset, *bcount));
@@ -634,7 +655,7 @@ int ckpt::fsync(int fd, int *result)
 
 		segment->deallocate(shm_synced);
 	} else if (fsync_lazy_level < 3) {
-		it->second.fsynced = true;
+		fi->fsynced = true;
 	}
 
 	*result = 0;
@@ -646,7 +667,7 @@ int ckpt::fdatasync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 
-	decltype(fmap.begin()) it;
+	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
@@ -654,16 +675,19 @@ int ckpt::fdatasync(int fd, int *result)
 
 	{
 		std::shared_lock lock(fmap_mutex);
-		it = fmap.find(fd);
-		if (it == fmap.end())
+		auto it = fmap.find(fd);
+		if (it != fmap.end()) {
+			fi = &it->second;
+		} else {
 			return 1;
+		}
 	}
 
 	if (fsync_lazy_level == 0) {
-		ofid = it->second.ofid;
-		boffset = it->second.boffset;
-		bcount = &it->second.bcount;
-		fq = it->second.fq;
+		ofid = fi->ofid;
+		boffset = fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
 
 		if (*bcount) {
 			fq->issue(message(SYS_write, ofid, boffset, *bcount));
@@ -682,7 +706,7 @@ int ckpt::fdatasync(int fd, int *result)
 
 		segment->deallocate(shm_synced);
 	} else if (fsync_lazy_level < 3) {
-		it->second.fdatasynced = true;
+		fi->fdatasynced = true;
 	}
 
 	*result = 0;
