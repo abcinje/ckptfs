@@ -2,11 +2,7 @@
 #include <climits>
 #include <cstdlib>
 #include <cstring>
-#include <mutex>
-#include <shared_mutex>
 #include <string>
-#include <tuple>
-#include <unordered_map>
 
 #include <fcntl.h>
 #include <syscall.h>
@@ -27,6 +23,8 @@ namespace bi = boost::interprocess;
 
 using message_queue = queue<message>;
 
+#define MAX_NUM_FDS	(1024)
+
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 
 /* config */
@@ -39,7 +37,8 @@ extern message_queue *mq;
 void print(std::string msg);
 void error(std::string msg);
 
-struct finfo {
+class finfo {
+public:
 	uint64_t ofid;
 	int pfs_fd;
 	off_t offset;
@@ -49,10 +48,14 @@ struct finfo {
 	bool fsynced;
 	bool fdatasynced;
 	message_queue *fq;
+
+	finfo(uint64_t ofid, int pfs_fd, off_t offset, off_t len, off_t boffset, size_t bcount, bool fsynced, bool fdatasynced, message_queue *fq)
+			: ofid(ofid), pfs_fd(pfs_fd), offset(offset), len(len), boffset(boffset), bcount(bcount), fsynced(fsynced), fdatasynced(fdatasynced), fq(fq)
+	{
+	}
 };
 
-static std::shared_mutex fmap_mutex;
-static std::unordered_map<int, finfo> fmap; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, boffset, bcount, fq)
+static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, boffset, bcount, fq)
 
 
 
@@ -71,21 +74,16 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			ofid = fi->ofid;
-			pfs_fd = fi->pfs_fd;
-			offset = &fi->offset;
-			boffset = fi->boffset;
-			bcount = &fi->bcount;
-			fq = fi->fq;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		pfs_fd = fi->pfs_fd;
+		offset = &fi->offset;
+		boffset = fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
+	} else {
+		return 1;
 	}
 
 	if (*bcount) {
@@ -122,22 +120,17 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			ofid = fi->ofid;
-			pfs_fd = fi->pfs_fd;
-			offset = &fi->offset;
-			len = &fi->len;
-			boffset = &fi->boffset;
-			bcount = &fi->bcount;
-			fq = fi->fq;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		pfs_fd = fi->pfs_fd;
+		offset = &fi->offset;
+		len = &fi->len;
+		boffset = &fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
+	} else {
+		return 1;
 	}
 
 	if (*boffset + *bcount != *offset) {
@@ -231,11 +224,11 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
 	len = statbuf.st_size;
 
-	{
-		std::scoped_lock lock(fmap_mutex);
-		if (!fmap.insert({bb_fd, {ofid, pfs_fd, 0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq)}}).second)
-			error("ckpt::open() failed (the same key already exists)");
-	}
+	if (bb_fd >= MAX_NUM_FDS)
+		error("ckpt::open() failed (fd is greater than or equal to MAX_NUM_FDS)");
+	if (fmap[bb_fd])
+		error("ckpt::open() failed (the same key already exists)");
+	fmap[bb_fd] = new finfo(ofid, pfs_fd, 0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
 
 	*result = bb_fd;
 	return 0;
@@ -252,23 +245,19 @@ int ckpt::close(int fd, int *result)
 	bool fdatasynced;
 	message_queue *fq;
 
-	{
-		std::scoped_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		boffset = fi->boffset;
+		bcount = fi->bcount;
+		fsynced = fi->fsynced;
+		fdatasynced = fi->fdatasynced;
+		fq = fi->fq;
 
-			ofid = fi->ofid;
-			boffset = fi->boffset;
-			bcount = fi->bcount;
-			fsynced = fi->fsynced;
-			fdatasynced = fi->fdatasynced;
-			fq = fi->fq;
-
-			fmap.erase(it);
-		} else {
-			return 1;
-		}
+		fmap[fd] = nullptr;
+		delete fi;
+	} else {
+		return 1;
 	}
 
 	if (bcount)
@@ -334,16 +323,11 @@ int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 {
 	int pfs_fd;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			pfs_fd = fi->pfs_fd;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		pfs_fd = fi->pfs_fd;
+	} else {
+		return 1;
 	}
 
 	if ((*result = syscall_no_intercept(SYS_fstat, pfs_fd, statbuf)) == -1)
@@ -381,16 +365,11 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 {
 	off_t *file_offset;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			file_offset = &fi->offset;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		file_offset = &fi->offset;
+	} else {
+		return 1;
 	}
 
 	if ((*result = syscall_no_intercept(SYS_lseek, fd, offset, whence)) == -1)
@@ -411,20 +390,15 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			ofid = fi->ofid;
-			pfs_fd = fi->pfs_fd;
-			boffset = fi->boffset;
-			bcount = &fi->bcount;
-			fq = fi->fq;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		pfs_fd = fi->pfs_fd;
+		boffset = fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
+	} else {
+		return 1;
 	}
 
 	if (*bcount) {
@@ -459,21 +433,16 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			ofid = fi->ofid;
-			pfs_fd = fi->pfs_fd;
-			len = &fi->len;
-			boffset = &fi->boffset;
-			bcount = &fi->bcount;
-			fq = fi->fq;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		pfs_fd = fi->pfs_fd;
+		len = &fi->len;
+		boffset = &fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
+	} else {
+		return 1;
 	}
 
 	if (*boffset + *bcount != offset) {
@@ -514,21 +483,16 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			ofid = fi->ofid;
-			pfs_fd = fi->pfs_fd;
-			offset = &fi->offset;
-			boffset = fi->boffset;
-			bcount = &fi->bcount;
-			fq = fi->fq;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		pfs_fd = fi->pfs_fd;
+		offset = &fi->offset;
+		boffset = fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
+	} else {
+		return 1;
 	}
 
 	if (*bcount) {
@@ -565,22 +529,17 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			ofid = fi->ofid;
-			pfs_fd = fi->pfs_fd;
-			offset = &fi->offset;
-			len = &fi->len;
-			boffset = &fi->boffset;
-			bcount = &fi->bcount;
-			fq = fi->fq;
-		} else {
-			return 1;
-		}
+	auto fi = fmap[fd];
+	if (fi) {
+		ofid = fi->ofid;
+		pfs_fd = fi->pfs_fd;
+		offset = &fi->offset;
+		len = &fi->len;
+		boffset = &fi->boffset;
+		bcount = &fi->bcount;
+		fq = fi->fq;
+	} else {
+		return 1;
 	}
 
 	if (*boffset + *bcount != *offset) {
@@ -615,21 +574,14 @@ int ckpt::fsync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 
-	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			fi = &it->second;
-		} else {
-			return 1;
-		}
-	}
+	auto fi = fmap[fd];
+	if (!fi)
+		return 1;
 
 	if (fsync_lazy_level == 0) {
 		ofid = fi->ofid;
@@ -666,21 +618,14 @@ int ckpt::fdatasync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 
-	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
-	{
-		std::shared_lock lock(fmap_mutex);
-		auto it = fmap.find(fd);
-		if (it != fmap.end()) {
-			fi = &it->second;
-		} else {
-			return 1;
-		}
-	}
+	auto fi = fmap[fd];
+	if (!fi)
+		return 1;
 
 	if (fsync_lazy_level == 0) {
 		ofid = fi->ofid;
