@@ -264,6 +264,7 @@ int ckpt::close(int fd, int *result)
 			fsynced = fi->fsynced;
 			fdatasynced = fi->fdatasynced;
 			fq = fi->fq;
+
 			fmap.erase(it);
 		} else {
 			return 1;
