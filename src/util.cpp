@@ -1,7 +1,9 @@
+#include <climits>
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "util.hpp"
@@ -9,26 +11,23 @@
 std::string resolve_abspath(std::string path)
 {
 	std::string resolved_path;
+	resolved_path.reserve(PATH_MAX);
 
-	std::vector<std::string> components, resolved;
+	std::vector<std::string> resolved;
 	std::stringstream ss(path);
 	std::string tmp;
 
 	if (path.at(0) != '/')
 		throw std::invalid_argument("resolve_absolute() failed (the path is not absolute)");
 
-	while (getline(ss, tmp, '/'))
-		if (!tmp.empty())
-			components.push_back(tmp);
-
-	for (auto it = components.cbegin(); it != components.cend(); it++) {
-		if (*it == ".") {
+	while (getline(ss, tmp, '/')) {
+		if (tmp == ".") {
 			continue;
-		} else if (*it == "..") {
+		} else if (tmp == "..") {
 			if (resolved.size() > 0)
 				resolved.pop_back();
-		} else {
-			resolved.push_back(*it);
+		} else if (!tmp.empty()) {
+			resolved.push_back(std::move(tmp));
 		}
 	}
 
