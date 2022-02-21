@@ -8,6 +8,7 @@
 #include <syscall.h>
 
 #include <boost/interprocess/managed_shared_memory.hpp>
+#include <boost/interprocess/sync/interprocess_semaphore.hpp>
 
 namespace bi = boost::interprocess;
 

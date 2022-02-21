@@ -1,44 +1,45 @@
 #ifndef CKPTFS_QUEUE_HPP
 #define CKPTFS_QUEUE_HPP
 
-#include <boost/interprocess/sync/interprocess_semaphore.hpp>
-
-namespace bi = boost::interprocess;
+#include <semaphore.h>
 
 template <typename T, size_t capacity = 16>
 class queue {
 private:
 	T buffer[capacity];
 	int front, rear;
-	bi::interprocess_semaphore mutex, slots, items;
+	sem_t mutex, slots, items;
 
 public:
-	queue(void) : front(0), rear(0), mutex(1), slots(capacity), items(0)
+	queue(void) : front(0), rear(0)
 	{
+		sem_init(&mutex, 1, 1);
+		sem_init(&slots, 1, capacity);
+		sem_init(&items, 1, 0);
 	}
 
 	void issue(T value) // N producers
 	{
-		slots.wait();
-		mutex.wait();
+		sem_wait(&slots);
+		sem_wait(&mutex);
 
 		rear = (rear + 1) % capacity;
 		buffer[rear] = value;
 
-		mutex.post();
-		items.post();
+		sem_post(&mutex);
+		sem_post(&items);
 	}
 
 	T dispatch(void) // 1 consumer
 	{
 		T value;
 
-		items.wait();
+		sem_wait(&items);
 
 		front = (front + 1) % capacity;
 		value = buffer[front];
 
-		slots.post();
+		sem_post(&slots);
 
 		return value;
 	}
