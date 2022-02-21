@@ -67,6 +67,8 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
+
+	finfo *fi;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
@@ -74,7 +76,7 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
@@ -113,6 +115,7 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 {
+	finfo *fi;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
@@ -120,7 +123,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
@@ -238,6 +241,8 @@ int ckpt::close(int fd, int *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
+
+	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t bcount;
@@ -245,7 +250,7 @@ int ckpt::close(int fd, int *result)
 	bool fdatasynced;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		boffset = fi->boffset;
@@ -321,9 +326,10 @@ int ckpt::stat(const char *pathname, struct stat *statbuf, int *result)
 
 int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 {
+	finfo *fi;
 	int pfs_fd;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		pfs_fd = fi->pfs_fd;
 	} else {
@@ -363,9 +369,10 @@ int ckpt::lstat(const char *pathname, struct stat *statbuf, int *result)
 
 int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 {
+	finfo *fi;
 	off_t *file_offset;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		file_offset = &fi->offset;
 	} else {
@@ -384,13 +391,15 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
+
+	finfo *fi;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
@@ -426,6 +435,7 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
 {
+	finfo *fi;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *len;
@@ -433,7 +443,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
@@ -476,6 +486,8 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
 	void *shm_synced;
 	shm_handle synced_handle;
+
+	finfo *fi;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
@@ -483,7 +495,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
@@ -522,6 +534,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
+	finfo *fi;
 	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
@@ -529,7 +542,7 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (fi) {
 		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
@@ -574,12 +587,13 @@ int ckpt::fsync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 
+	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (!fi)
 		return 1;
 
@@ -618,12 +632,13 @@ int ckpt::fdatasync(int fd, int *result)
 	void *shm_synced;
 	shm_handle synced_handle;
 
+	finfo *fi;
 	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
 
-	auto fi = fmap[fd];
+	fi = fmap[fd];
 	if (!fi)
 		return 1;
 
