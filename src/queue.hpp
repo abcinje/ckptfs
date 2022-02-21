@@ -34,12 +34,10 @@ public:
 		T value;
 
 		items.wait();
-		mutex.wait();
 
 		front = (front + 1) % capacity;
 		value = buffer[front];
 
-		mutex.post();
 		slots.post();
 
 		return value;
