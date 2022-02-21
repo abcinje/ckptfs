@@ -24,7 +24,7 @@ std::string resolve_abspath(std::string path)
 		if (tmp == ".") {
 			continue;
 		} else if (tmp == "..") {
-			if (resolved.size() > 0)
+			if (!resolved.empty())
 				resolved.pop_back();
 		} else if (!tmp.empty()) {
 			resolved.push_back(std::move(tmp));
