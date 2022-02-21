@@ -17,7 +17,7 @@ public:
 	{
 	}
 
-	void issue(T value)
+	void issue(T value) // N producers
 	{
 		slots.wait();
 		mutex.wait();
@@ -29,7 +29,7 @@ public:
 		items.post();
 	}
 
-	T dispatch(void)
+	T dispatch(void) // 1 consumer
 	{
 		T value;
 
