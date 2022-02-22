@@ -158,6 +158,7 @@ void drainer::close(const message &msg)
 			pfs_fd = fi->pfs_fd;
 			shm_fq = fi->fq;
 			pipefd = fi->pipefd;
+
 			fmap.erase(it);
 		} else {
 			throw std::logic_error("drainer::close() failed (no such key)");
