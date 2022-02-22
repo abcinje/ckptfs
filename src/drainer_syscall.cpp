@@ -51,7 +51,7 @@ void drainer::read(const message &msg)
 	int pfs_fd;
 
 	{
-		std::shared_lock lock(fmap_mutex);
+		std::shared_lock sl(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			auto fi = &it->second;
@@ -76,7 +76,7 @@ void drainer::write(const message &msg)
 	ssize_t len, spliced;
 
 	{
-		std::shared_lock lock(fmap_mutex);
+		std::shared_lock sl(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			auto fi = &it->second;
@@ -137,7 +137,7 @@ void drainer::open(const message &msg)
 		throw std::runtime_error("fcntl() failed (" + std::string(strerror(errno)) + ")");
 
 	{
-		std::scoped_lock lock(fmap_mutex);
+		std::scoped_lock ul(fmap_mutex);
 		if (!fmap.insert({msg.ofid, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
 			throw std::logic_error("drainer::open() failed (the same key already exists)");
 	}
@@ -149,7 +149,7 @@ void drainer::close(const message &msg)
 	int bb_fd, pfs_fd, *pipefd;
 
 	{
-		std::scoped_lock lock(fmap_mutex);
+		std::scoped_lock ul(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			auto fi = &it->second;
@@ -196,7 +196,7 @@ void drainer::fsync(const message &msg)
 		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
 
 	{
-		std::shared_lock lock(fmap_mutex);
+		std::shared_lock sl(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			auto fi = &it->second;
@@ -223,7 +223,7 @@ void drainer::fdatasync(const message &msg)
 		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
 	{
-		std::shared_lock lock(fmap_mutex);
+		std::shared_lock sl(fmap_mutex);
 		auto it = fmap.find(msg.ofid);
 		if (it != fmap.end()) {
 			auto fi = &it->second;
