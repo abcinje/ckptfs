@@ -18,6 +18,13 @@ public:
 		sem_init(&items, 1, 0);
 	}
 
+	~queue(void)
+	{
+		sem_destroy(&mutex);
+		sem_destroy(&slots);
+		sem_destroy(&items);
+	}
+
 	void issue(T value) // N producers
 	{
 		sem_wait(&slots);
