@@ -74,7 +74,7 @@ int main(int argc, char *argv[])
 {
 	init_path();
 
-	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 20);
+	segment = new bi::managed_shared_memory(bi::create_only, "ckptfs", 1 << 30);
 	message_queue *mq = segment->construct<message_queue>("q")();
 
 	while (true) {
