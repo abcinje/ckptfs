@@ -29,15 +29,12 @@ using message_queue = queue<message>;
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
 
-struct finfo {
+thread_local struct finfo {
 	int bb_fd;
 	int pfs_fd;
-	void *fq;
+	void *shm_fq;
 	int *pipefd;
-};
-
-static std::shared_mutex fmap_mutex;
-static std::unordered_map<uint64_t, finfo> fmap; // fmap: ofid -> (bb_fd, pfs_fd, fq, pipefd)
+} fi;
 
 
 
@@ -48,21 +45,8 @@ static std::unordered_map<uint64_t, finfo> fmap; // fmap: ofid -> (bb_fd, pfs_fd
 void drainer::read(const message &msg)
 {
 	void *shm_synced;
-	int pfs_fd;
 
-	{
-		std::shared_lock sl(fmap_mutex);
-		auto it = fmap.find(msg.ofid);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			pfs_fd = fi->pfs_fd;
-		} else {
-			throw std::logic_error("drainer::read() failed (no such key)");
-		}
-	}
-
-	if (::fdatasync(pfs_fd) == -1)
+	if (::fdatasync(fi.pfs_fd) == -1)
 		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
 
 	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
@@ -71,23 +55,8 @@ void drainer::read(const message &msg)
 
 void drainer::write(const message &msg)
 {
-	int bb_fd, pfs_fd, *pipefd;
 	off_t offset0, offset1;
 	ssize_t len, spliced;
-
-	{
-		std::shared_lock sl(fmap_mutex);
-		auto it = fmap.find(msg.ofid);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			bb_fd = fi->bb_fd;
-			pfs_fd = fi->pfs_fd;
-			pipefd = fi->pipefd;
-		} else {
-			throw std::logic_error("drainer::write() failed (no such key)");
-		}
-	}
 
 	offset0 = offset1 = msg.offset;
 	if ((len = msg.len) < 0)
@@ -96,10 +65,10 @@ void drainer::write(const message &msg)
 	do {
 		spliced = (len < PIPE_CAPACITY) ? len : PIPE_CAPACITY;
 
-		if (::splice(bb_fd, &offset1, pipefd[1], nullptr, spliced, SPLICE_F_MOVE) == -1)
+		if (::splice(fi.bb_fd, &offset1, fi.pipefd[1], nullptr, spliced, SPLICE_F_MOVE) == -1)
 			throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
 
-		if (::splice(pipefd[0], nullptr, pfs_fd, &offset0, spliced, SPLICE_F_MOVE) == -1)
+		if (::splice(fi.pipefd[0], nullptr, fi.pfs_fd, &offset0, spliced, SPLICE_F_MOVE) == -1)
 			throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
 
 		len -= spliced;
@@ -136,78 +105,43 @@ void drainer::open(const message &msg)
 	if (::fcntl(pipefd[0], F_SETPIPE_SZ, PIPE_CAPACITY) == -1)
 		throw std::runtime_error("fcntl() failed (" + std::string(strerror(errno)) + ")");
 
-	{
-		std::scoped_lock ul(fmap_mutex);
-		if (!fmap.insert({msg.ofid, {bb_fd, pfs_fd, shm_fq, pipefd}}).second)
-			throw std::logic_error("drainer::open() failed (the same key already exists)");
-	}
+	fi = {bb_fd, pfs_fd, shm_fq, pipefd};
 }
 
 void drainer::close(const message &msg)
 {
-	void *shm_fq, *shm_synced;
-	int bb_fd, pfs_fd, *pipefd;
-
-	{
-		std::scoped_lock ul(fmap_mutex);
-		auto it = fmap.find(msg.ofid);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			bb_fd = fi->bb_fd;
-			pfs_fd = fi->pfs_fd;
-			shm_fq = fi->fq;
-			pipefd = fi->pipefd;
-
-			fmap.erase(it);
-		} else {
-			throw std::logic_error("drainer::close() failed (no such key)");
-		}
-	}
+	void *shm_synced;
 
 	if (msg.flags & CKPT_S_CLOSEWAIT) {
 		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
-		if (synchronize(pfs_fd) == -1)
+		if (synchronize(fi.pfs_fd) == -1)
 			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 		shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
 	} else if (msg.flags & CKPT_S_CLOSENOWAIT) {
 		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
-		if (synchronize(pfs_fd) == -1)
+		if (synchronize(fi.pfs_fd) == -1)
 			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 	}
 
-	delete[] pipefd;
-	segment->deallocate(shm_fq);
+	delete[] fi.pipefd;
+	segment->deallocate(fi.shm_fq);
 
-	if (::close(bb_fd) == -1)
+	if (::close(fi.bb_fd) == -1)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
 
-	if (::close(pfs_fd) == -1)
+	if (::close(fi.pfs_fd) == -1)
 		throw std::runtime_error("close() failed (" + std::string(strerror(errno)) + ")");
 }
 
 void drainer::fsync(const message &msg)
 {
 	void *shm_synced;
-	int pfs_fd;
 
 	if (!(msg.flags & CKPT_S_NORMAL))
 		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
 
-	{
-		std::shared_lock sl(fmap_mutex);
-		auto it = fmap.find(msg.ofid);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			pfs_fd = fi->pfs_fd;
-		} else {
-			throw std::logic_error("drainer::fsync() failed (no such key)");
-		}
-	}
-
-	if (::fsync(pfs_fd) == -1)
+	if (::fsync(fi.pfs_fd) == -1)
 		throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 
 	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
@@ -217,24 +151,11 @@ void drainer::fsync(const message &msg)
 void drainer::fdatasync(const message &msg)
 {
 	void *shm_synced;
-	int pfs_fd;
 
 	if (!(msg.flags & CKPT_S_NORMAL))
 		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
-	{
-		std::shared_lock sl(fmap_mutex);
-		auto it = fmap.find(msg.ofid);
-		if (it != fmap.end()) {
-			auto fi = &it->second;
-
-			pfs_fd = fi->pfs_fd;
-		} else {
-			throw std::logic_error("drainer::fdatasync() failed (no such key)");
-		}
-	}
-
-	if (::fdatasync(pfs_fd) == -1)
+	if (::fdatasync(fi.pfs_fd) == -1)
 		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
 
 	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
