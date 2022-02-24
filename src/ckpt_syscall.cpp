@@ -148,11 +148,8 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 		error("write() failed (" + std::string(strerror(errno)) + ")");
 
 	*offset += *result;
-	if (*len < *offset) {
-		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, *offset) == -1)
-			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
+	if (*len < *offset)
 		*len = *offset;
-	}
 
 	*bcount += *result;
 	if (*bcount >= batch_size) {
@@ -299,6 +296,7 @@ int ckpt::close(int fd, int *result)
 	return 0;
 }
 
+/* FIXME */
 int ckpt::stat(const char *pathname, struct stat *statbuf, int *result)
 {
 	std::string abspath;
@@ -324,6 +322,7 @@ int ckpt::stat(const char *pathname, struct stat *statbuf, int *result)
 	return 0;
 }
 
+/* FIXME */
 int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 {
 	finfo *fi;
@@ -342,6 +341,7 @@ int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 	return 0;
 }
 
+/* FIXME */
 int ckpt::lstat(const char *pathname, struct stat *statbuf, int *result)
 {
 	std::string abspath;
@@ -467,11 +467,8 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 		error("pwrite() failed (" + std::string(strerror(errno)) + ")");
 
 	offset += *result;
-	if (*len < offset) {
-		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, offset) == -1)
-			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
+	if (*len < offset)
 		*len = offset;
-	}
 
 	*bcount += *result;
 	if (*bcount >= batch_size) {
@@ -567,11 +564,8 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 		error("writev() failed (" + std::string(strerror(errno)) + ")");
 
 	*offset += *result;
-	if (*len < *offset) {
-		if (syscall_no_intercept(SYS_ftruncate, pfs_fd, *offset) == -1)
-			error("ftruncate() failed (" + std::string(strerror(errno)) + ")");
+	if (*len < *offset)
 		*len = *offset;
-	}
 
 	*bcount += *result;
 	if (*bcount >= batch_size) {
