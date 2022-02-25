@@ -257,7 +257,6 @@ int ckpt::close(int fd, int *result)
 	return 0;
 }
 
-/* FIXME */
 int ckpt::stat(const char *pathname, struct stat *statbuf, int *result)
 {
 	std::string abspath;
@@ -275,34 +274,28 @@ int ckpt::stat(const char *pathname, struct stat *statbuf, int *result)
 		return 1;
 
 	std::string file(ckpt_file.substr(ckpt_dir->size()));
-	std::string pfs_file(*pfs_dir + file);
+	std::string bb_file(*bb_dir + file);
 
-	if ((*result = syscall_no_intercept(SYS_stat, pfs_file.c_str(), statbuf)) == -1)
+	if ((*result = syscall_no_intercept(SYS_stat, bb_file.c_str(), statbuf)) == -1)
 		error("stat() failed (" + std::string(strerror(errno)) + ")");
 
 	return 0;
 }
 
-/* FIXME */
 int ckpt::fstat(int fd, struct stat *statbuf, int *result)
 {
 	finfo *fi;
-	int pfs_fd;
 
 	fi = fmap[fd];
-	if (fi) {
-		pfs_fd = fi->pfs_fd;
-	} else {
+	if (!fi)
 		return 1;
-	}
 
-	if ((*result = syscall_no_intercept(SYS_fstat, pfs_fd, statbuf)) == -1)
+	if ((*result = syscall_no_intercept(SYS_fstat, fd, statbuf)) == -1)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
 
 	return 0;
 }
 
-/* FIXME */
 int ckpt::lstat(const char *pathname, struct stat *statbuf, int *result)
 {
 	std::string abspath;
@@ -320,9 +313,9 @@ int ckpt::lstat(const char *pathname, struct stat *statbuf, int *result)
 		return 1;
 
 	std::string file(ckpt_file.substr(ckpt_dir->size()));
-	std::string pfs_file(*pfs_dir + file);
+	std::string bb_file(*bb_dir + file);
 
-	if ((*result = syscall_no_intercept(SYS_lstat, pfs_file.c_str(), statbuf)) == -1)
+	if ((*result = syscall_no_intercept(SYS_lstat, bb_file.c_str(), statbuf)) == -1)
 		error("lstat() failed (" + std::string(strerror(errno)) + ")");
 
 	return 0;
