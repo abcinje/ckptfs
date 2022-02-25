@@ -52,7 +52,7 @@ public:
 	}
 };
 
-static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (offset, len, boffset, bcount, fq)
+static finfo *fmap[MAX_NUM_FDS]; // fmap: fd -> (offset, len, boffset, bcount, fq)
 
 
 
@@ -127,7 +127,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
 	void *shm_pathname, *shm_fq, *shm_synced;
 	shm_handle pathname_handle, fq_handle, synced_handle;
-	int bb_fd;
+	int fd;
 	struct stat statbuf;
 	off_t len;
 
@@ -152,7 +152,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	std::string bb_file(*bb_dir + file);
 	std::string pfs_file(*pfs_dir + file);
 
-	if ((bb_fd = syscall_no_intercept(SYS_open, bb_file.c_str(), flags, mode)) == -1)
+	if ((fd = syscall_no_intercept(SYS_open, bb_file.c_str(), flags, mode)) == -1)
 		error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	shm_pathname = segment->allocate(ckpt_file.size() + 1);
@@ -177,17 +177,17 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 
 	segment->deallocate(shm_synced);
 
-	if (syscall_no_intercept(SYS_fstat, bb_fd, &statbuf) == -1)
+	if (syscall_no_intercept(SYS_fstat, fd, &statbuf) == -1)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
 	len = statbuf.st_size;
 
-	if (bb_fd >= MAX_NUM_FDS)
+	if (fd >= MAX_NUM_FDS)
 		error("ckpt::open() failed (fd is greater than or equal to MAX_NUM_FDS)");
-	if (fmap[bb_fd])
+	if (fmap[fd])
 		error("ckpt::open() failed (the same key already exists)");
-	fmap[bb_fd] = new finfo(0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
+	fmap[fd] = new finfo(0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
 
-	*result = bb_fd;
+	*result = fd;
 	return 0;
 }
 
