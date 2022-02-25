@@ -18,7 +18,6 @@ namespace bi = boost::interprocess;
 #include "ckpt_syscall.hpp"
 #include "message.hpp"
 #include "queue.hpp"
-#include "random.hpp"
 #include "util.hpp"
 
 using message_queue = queue<message>;
@@ -39,7 +38,6 @@ void error(std::string msg);
 
 class finfo {
 public:
-	uint64_t ofid;
 	int pfs_fd;
 	off_t offset;
 	off_t len;
@@ -49,13 +47,13 @@ public:
 	bool fdatasynced;
 	message_queue *fq;
 
-	finfo(uint64_t ofid, int pfs_fd, off_t offset, off_t len, off_t boffset, size_t bcount, bool fsynced, bool fdatasynced, message_queue *fq)
-			: ofid(ofid), pfs_fd(pfs_fd), offset(offset), len(len), boffset(boffset), bcount(bcount), fsynced(fsynced), fdatasynced(fdatasynced), fq(fq)
+	finfo(int pfs_fd, off_t offset, off_t len, off_t boffset, size_t bcount, bool fsynced, bool fdatasynced, message_queue *fq)
+			: pfs_fd(pfs_fd), offset(offset), len(len), boffset(boffset), bcount(bcount), fsynced(fsynced), fdatasynced(fdatasynced), fq(fq)
 	{
 	}
 };
 
-static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (ofid, pfs_fd, offset, len, boffset, bcount, fq)
+static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (pfs_fd, offset, len, boffset, bcount, fq)
 
 
 
@@ -69,7 +67,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	shm_handle synced_handle;
 
 	finfo *fi;
-	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
 	off_t boffset;
@@ -78,7 +75,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
 		boffset = fi->boffset;
@@ -89,7 +85,7 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	}
 
 	if (*bcount) {
-		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		fq->issue(message(SYS_write, boffset, *bcount));
 		*bcount = 0;
 	}
 
@@ -100,7 +96,7 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
-	fq->issue(message(SYS_read, ofid, 0, 0, handles));
+	fq->issue(message(SYS_read, 0, 0, handles));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -116,7 +112,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 {
 	finfo *fi;
-	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
 	off_t *boffset;
@@ -125,7 +120,6 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
 		len = &fi->len;
@@ -138,7 +132,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 	if (*boffset + *bcount != *offset) {
 		if (*bcount) {
-			fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+			fq->issue(message(SYS_write, *boffset, *bcount));
 			*bcount = 0;
 		}
 		*boffset = *offset;
@@ -153,7 +147,7 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 	*bcount += *result;
 	if (*bcount >= batch_size) {
-		fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+		fq->issue(message(SYS_write, *boffset, *bcount));
 		*bcount = 0;
 	}
 
@@ -164,7 +158,6 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
 	void *shm_pathname, *shm_fq, *shm_synced;
 	shm_handle pathname_handle, fq_handle, synced_handle;
-	uint64_t ofid;
 	int bb_fd, pfs_fd;
 	struct stat statbuf;
 	off_t len;
@@ -190,8 +183,6 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	std::string bb_file(*bb_dir + file);
 	std::string pfs_file(*pfs_dir + file);
 
-	ofid = rand64();
-
 	if ((bb_fd = syscall_no_intercept(SYS_open, bb_file.c_str(), flags, mode)) == -1)
 		error("open() failed (" + std::string(strerror(errno)) + ")");
 
@@ -215,7 +206,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 		.pathname_handle = pathname_handle,
 		.synced_handle = synced_handle,
 	};
-	mq->issue(message(SYS_open, ofid, 0, 0, handles));
+	mq->issue(message(SYS_open, 0, 0, handles));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -228,7 +219,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 		error("ckpt::open() failed (fd is greater than or equal to MAX_NUM_FDS)");
 	if (fmap[bb_fd])
 		error("ckpt::open() failed (the same key already exists)");
-	fmap[bb_fd] = new finfo(ofid, pfs_fd, 0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
+	fmap[bb_fd] = new finfo(pfs_fd, 0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
 
 	*result = bb_fd;
 	return 0;
@@ -240,7 +231,6 @@ int ckpt::close(int fd, int *result)
 	shm_handle synced_handle;
 
 	finfo *fi;
-	uint64_t ofid;
 	off_t boffset;
 	size_t bcount;
 	bool fsynced;
@@ -249,7 +239,6 @@ int ckpt::close(int fd, int *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		boffset = fi->boffset;
 		bcount = fi->bcount;
 		fsynced = fi->fsynced;
@@ -263,7 +252,7 @@ int ckpt::close(int fd, int *result)
 	}
 
 	if (bcount)
-		fq->issue(message(SYS_write, ofid, boffset, bcount));
+		fq->issue(message(SYS_write, boffset, bcount));
 
 	if (fsynced || fdatasynced) {
 		int flags = fsynced ? 0 : CKPT_S_DATAONLY;
@@ -278,14 +267,14 @@ int ckpt::close(int fd, int *result)
 			message::shm_handles handles = {
 				.synced_handle = synced_handle,
 			};
-			fq->issue(message(SYS_close, ofid, 0, 0, handles, flags));
+			fq->issue(message(SYS_close, 0, 0, handles, flags));
 			(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 			segment->deallocate(shm_synced);
 		} else if (fsync_lazy_level == 2) {
 			flags |= CKPT_S_CLOSENOWAIT;
 
-			fq->issue(message(SYS_close, ofid, 0, 0, {}, flags));
+			fq->issue(message(SYS_close, 0, 0, {}, flags));
 		}
 	}
 
@@ -393,7 +382,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	shm_handle synced_handle;
 
 	finfo *fi;
-	uint64_t ofid;
 	int pfs_fd;
 	off_t boffset;
 	size_t *bcount;
@@ -401,7 +389,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
 		boffset = fi->boffset;
 		bcount = &fi->bcount;
@@ -411,7 +398,7 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	}
 
 	if (*bcount) {
-		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		fq->issue(message(SYS_write, boffset, *bcount));
 		*bcount = 0;
 	}
 
@@ -422,7 +409,7 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
-	fq->issue(message(SYS_read, ofid, 0, 0, handles));
+	fq->issue(message(SYS_read, 0, 0, handles));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -436,7 +423,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	finfo *fi;
-	uint64_t ofid;
 	int pfs_fd;
 	off_t *len;
 	off_t *boffset;
@@ -445,7 +431,6 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
 		len = &fi->len;
 		boffset = &fi->boffset;
@@ -457,7 +442,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 	if (*boffset + *bcount != offset) {
 		if (*bcount) {
-			fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+			fq->issue(message(SYS_write, *boffset, *bcount));
 			*bcount = 0;
 		}
 		*boffset = offset;
@@ -472,7 +457,7 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 	*bcount += *result;
 	if (*bcount >= batch_size) {
-		fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+		fq->issue(message(SYS_write, *boffset, *bcount));
 		*bcount = 0;
 	}
 
@@ -485,7 +470,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	shm_handle synced_handle;
 
 	finfo *fi;
-	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset;
 	off_t boffset;
@@ -494,7 +478,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
 		boffset = fi->boffset;
@@ -505,7 +488,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	}
 
 	if (*bcount) {
-		fq->issue(message(SYS_write, ofid, boffset, *bcount));
+		fq->issue(message(SYS_write, boffset, *bcount));
 		*bcount = 0;
 	}
 
@@ -516,7 +499,7 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 	message::shm_handles handles = {
 		.synced_handle = synced_handle,
 	};
-	fq->issue(message(SYS_read, ofid, 0, 0, handles));
+	fq->issue(message(SYS_read, 0, 0, handles));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
@@ -532,7 +515,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
 	finfo *fi;
-	uint64_t ofid;
 	int pfs_fd;
 	off_t *offset, *len;
 	off_t *boffset;
@@ -541,7 +523,6 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		ofid = fi->ofid;
 		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
 		len = &fi->len;
@@ -554,7 +535,7 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	if (*boffset + *bcount != *offset) {
 		if (*bcount) {
-			fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+			fq->issue(message(SYS_write, *boffset, *bcount));
 			*bcount = 0;
 		}
 		*boffset = *offset;
@@ -569,7 +550,7 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	*bcount += *result;
 	if (*bcount >= batch_size) {
-		fq->issue(message(SYS_write, ofid, *boffset, *bcount));
+		fq->issue(message(SYS_write, *boffset, *bcount));
 		*bcount = 0;
 	}
 
@@ -582,7 +563,6 @@ int ckpt::fsync(int fd, int *result)
 	shm_handle synced_handle;
 
 	finfo *fi;
-	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
@@ -592,13 +572,12 @@ int ckpt::fsync(int fd, int *result)
 		return 1;
 
 	if (fsync_lazy_level == 0) {
-		ofid = fi->ofid;
 		boffset = fi->boffset;
 		bcount = &fi->bcount;
 		fq = fi->fq;
 
 		if (*bcount) {
-			fq->issue(message(SYS_write, ofid, boffset, *bcount));
+			fq->issue(message(SYS_write, boffset, *bcount));
 			*bcount = 0;
 		}
 
@@ -609,7 +588,7 @@ int ckpt::fsync(int fd, int *result)
 		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fsync, ofid, 0, 0, handles, CKPT_S_NORMAL));
+		fq->issue(message(SYS_fsync, 0, 0, handles, CKPT_S_NORMAL));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
@@ -627,7 +606,6 @@ int ckpt::fdatasync(int fd, int *result)
 	shm_handle synced_handle;
 
 	finfo *fi;
-	uint64_t ofid;
 	off_t boffset;
 	size_t *bcount;
 	message_queue *fq;
@@ -637,13 +615,12 @@ int ckpt::fdatasync(int fd, int *result)
 		return 1;
 
 	if (fsync_lazy_level == 0) {
-		ofid = fi->ofid;
 		boffset = fi->boffset;
 		bcount = &fi->bcount;
 		fq = fi->fq;
 
 		if (*bcount) {
-			fq->issue(message(SYS_write, ofid, boffset, *bcount));
+			fq->issue(message(SYS_write, boffset, *bcount));
 			*bcount = 0;
 		}
 
@@ -654,7 +631,7 @@ int ckpt::fdatasync(int fd, int *result)
 		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fdatasync, ofid, 0, 0, handles, CKPT_S_NORMAL));
+		fq->issue(message(SYS_fdatasync, 0, 0, handles, CKPT_S_NORMAL));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);

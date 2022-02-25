@@ -19,7 +19,6 @@ enum {
 class message {
 public:
 	long syscall;
-	uint64_t ofid;
 	off_t offset;
 	size_t len;
 	struct shm_handles {
@@ -28,7 +27,7 @@ public:
 	int flags;
 
 	message(void);
-	message(long syscall, uint64_t ofid, off_t offset, size_t len, shm_handles handles = {}, int flags = 0);
+	message(long syscall, off_t offset, size_t len, shm_handles handles = {}, int flags = 0);
 };
 
 #endif //CKPTFS_MESSAGE_HPP
