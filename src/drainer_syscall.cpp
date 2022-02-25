@@ -141,9 +141,6 @@ void drainer::fsync(const message &msg)
 {
 	void *shm_synced;
 
-	if (!(msg.flags & CKPT_S_NORMAL))
-		throw std::logic_error("drainer::fsync() failed (the function shouldn't be called with the current configuration)");
-
 	if (::fsync(fi.pfs_fd) == -1)
 		throw std::runtime_error("fsync() failed (" + std::string(strerror(errno)) + ")");
 
@@ -154,9 +151,6 @@ void drainer::fsync(const message &msg)
 void drainer::fdatasync(const message &msg)
 {
 	void *shm_synced;
-
-	if (!(msg.flags & CKPT_S_NORMAL))
-		throw std::logic_error("drainer::fdatasync() failed (the function shouldn't be called with the current configuration)");
 
 	if (::fdatasync(fi.pfs_fd) == -1)
 		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");

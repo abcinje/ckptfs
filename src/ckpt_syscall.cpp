@@ -485,7 +485,7 @@ int ckpt::fsync(int fd, int *result)
 		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fsync, 0, 0, handles, CKPT_S_NORMAL));
+		fq->issue(message(SYS_fsync, 0, 0, handles));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
@@ -528,7 +528,7 @@ int ckpt::fdatasync(int fd, int *result)
 		message::shm_handles handles = {
 			.synced_handle = synced_handle,
 		};
-		fq->issue(message(SYS_fdatasync, 0, 0, handles, CKPT_S_NORMAL));
+		fq->issue(message(SYS_fdatasync, 0, 0, handles));
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 		segment->deallocate(shm_synced);
