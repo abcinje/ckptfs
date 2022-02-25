@@ -27,9 +27,6 @@ static void drain(message_queue *fq)
 		message msg(fq->dispatch());
 
 		switch (msg.syscall) {
-			case SYS_read:
-				drainer::read(msg);
-				break;
 			case SYS_write:
 				drainer::write(msg);
 				break;

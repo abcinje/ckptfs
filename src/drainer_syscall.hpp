@@ -5,7 +5,6 @@
 
 namespace drainer
 {
-	void read(const message &msg);
 	void write(const message &msg);
 	void open(const message &msg);
 	void close(const message &msg);

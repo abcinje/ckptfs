@@ -63,45 +63,17 @@ static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (pfs_fd, offset, len, boffset
 
 int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 {
-	void *shm_synced;
-	shm_handle synced_handle;
-
 	finfo *fi;
-	int pfs_fd;
 	off_t *offset;
-	off_t boffset;
-	size_t *bcount;
-	message_queue *fq;
 
 	fi = fmap[fd];
 	if (fi) {
-		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
-		boffset = fi->boffset;
-		bcount = &fi->bcount;
-		fq = fi->fq;
 	} else {
 		return 1;
 	}
 
-	if (*bcount) {
-		fq->issue(message(SYS_write, boffset, *bcount));
-		*bcount = 0;
-	}
-
-	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
-	new (shm_synced) bi::interprocess_semaphore(0);
-	synced_handle = segment->get_handle_from_address(shm_synced);
-
-	message::shm_handles handles = {
-		.synced_handle = synced_handle,
-	};
-	fq->issue(message(SYS_read, 0, 0, handles));
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
-
-	segment->deallocate(shm_synced);
-
-	if ((*result = syscall_no_intercept(SYS_read, pfs_fd, buf, count)) == -1)
+	if ((*result = syscall_no_intercept(SYS_read, fd, buf, count)) == -1)
 		error("read() failed (" + std::string(strerror(errno)) + ")");
 
 	*offset += *result;
@@ -378,43 +350,13 @@ int ckpt::lseek(int fd, off_t offset, int whence, off_t *result)
 
 int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 {
-	void *shm_synced;
-	shm_handle synced_handle;
-
 	finfo *fi;
-	int pfs_fd;
-	off_t boffset;
-	size_t *bcount;
-	message_queue *fq;
 
 	fi = fmap[fd];
-	if (fi) {
-		pfs_fd = fi->pfs_fd;
-		boffset = fi->boffset;
-		bcount = &fi->bcount;
-		fq = fi->fq;
-	} else {
+	if (!fi)
 		return 1;
-	}
 
-	if (*bcount) {
-		fq->issue(message(SYS_write, boffset, *bcount));
-		*bcount = 0;
-	}
-
-	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
-	new (shm_synced) bi::interprocess_semaphore(0);
-	synced_handle = segment->get_handle_from_address(shm_synced);
-
-	message::shm_handles handles = {
-		.synced_handle = synced_handle,
-	};
-	fq->issue(message(SYS_read, 0, 0, handles));
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
-
-	segment->deallocate(shm_synced);
-
-	if ((*result = syscall_no_intercept(SYS_pread64, pfs_fd, buf, count, offset)) == -1)
+	if ((*result = syscall_no_intercept(SYS_pread64, fd, buf, count, offset)) == -1)
 		error("pread() failed (" + std::string(strerror(errno)) + ")");
 
 	return 0;
@@ -466,45 +408,17 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
-	void *shm_synced;
-	shm_handle synced_handle;
-
 	finfo *fi;
-	int pfs_fd;
 	off_t *offset;
-	off_t boffset;
-	size_t *bcount;
-	message_queue *fq;
 
 	fi = fmap[fd];
 	if (fi) {
-		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
-		boffset = fi->boffset;
-		bcount = &fi->bcount;
-		fq = fi->fq;
 	} else {
 		return 1;
 	}
 
-	if (*bcount) {
-		fq->issue(message(SYS_write, boffset, *bcount));
-		*bcount = 0;
-	}
-
-	shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
-	new (shm_synced) bi::interprocess_semaphore(0);
-	synced_handle = segment->get_handle_from_address(shm_synced);
-
-	message::shm_handles handles = {
-		.synced_handle = synced_handle,
-	};
-	fq->issue(message(SYS_read, 0, 0, handles));
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
-
-	segment->deallocate(shm_synced);
-
-	if ((*result = syscall_no_intercept(SYS_readv, pfs_fd, iov, iovcnt)) == -1)
+	if ((*result = syscall_no_intercept(SYS_readv, fd, iov, iovcnt)) == -1)
 		error("readv() failed (" + std::string(strerror(errno)) + ")");
 
 	*offset += *result;

@@ -42,17 +42,6 @@ thread_local struct finfo {
  * => Syscalls
  *******************/
 
-void drainer::read(const message &msg)
-{
-	void *shm_synced;
-
-	if (::fdatasync(fi.pfs_fd) == -1)
-		throw std::runtime_error("fdatasync() failed (" + std::string(strerror(errno)) + ")");
-
-	shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
-	(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
-}
-
 void drainer::write(const message &msg)
 {
 	off_t offset0, offset1;
