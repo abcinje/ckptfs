@@ -21,6 +21,8 @@ namespace bi = boost::interprocess;
 #include "drainer_syscall.hpp"
 #include "message.hpp"
 #include "queue.hpp"
+#include "random.hpp"
+#include "util.hpp"
 
 using message_queue = queue<message>;
 
@@ -34,6 +36,8 @@ thread_local struct finfo {
 	int pfs_fd;
 	void *shm_fq;
 	int *pipefd;
+	std::string tmp_file;
+	std::string pfs_file;
 } fi;
 
 
@@ -68,6 +72,7 @@ void drainer::open(const message &msg)
 {
 	void *shm_pathname, *shm_fq;
 	int bb_fd, pfs_fd, *pipefd;
+	uint64_t ofid;
 
 	shm_pathname = segment->get_address_from_handle(msg.handles.pathname_handle);
 	std::string ckpt_file(static_cast<char *>(shm_pathname));
@@ -77,14 +82,17 @@ void drainer::open(const message &msg)
 
 	shm_fq = segment->get_address_from_handle(msg.handles.fq_handle);
 
+	ofid = rand64();
+
 	std::string file(ckpt_file.substr(ckpt_dir->size()));
 	std::string bb_file(*bb_dir + file);
 	std::string pfs_file(*pfs_dir + file);
+	std::string tmp_file(*pfs_dir + "/.tmp" + to_hex(ofid));
 
 	if ((bb_fd = ::open(bb_file.c_str(), O_RDONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((pfs_fd = ::open(pfs_file.c_str(), msg.flags, msg.mode)) == -1)
+	if ((pfs_fd = ::open(tmp_file.c_str(), msg.flags, msg.mode)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	pipefd = new int[2];
@@ -94,12 +102,15 @@ void drainer::open(const message &msg)
 	if (::fcntl(pipefd[0], F_SETPIPE_SZ, PIPE_CAPACITY) == -1)
 		throw std::runtime_error("fcntl() failed (" + std::string(strerror(errno)) + ")");
 
-	fi = {bb_fd, pfs_fd, shm_fq, pipefd};
+	fi = {bb_fd, pfs_fd, shm_fq, pipefd, std::move(tmp_file), std::move(pfs_file)};
 }
 
 void drainer::close(const message &msg)
 {
 	void *shm_synced;
+
+	std::string tmp_file(std::move(fi.tmp_file));
+	std::string pfs_file(std::move(fi.pfs_file));
 
 	if (msg.flags & CKPT_S_CLOSEWAIT) {
 		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
@@ -112,6 +123,9 @@ void drainer::close(const message &msg)
 		if (synchronize(fi.pfs_fd) == -1)
 			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 	}
+
+	if (::rename(tmp_file.c_str(), pfs_file.c_str()) == -1)
+		throw std::runtime_error("rename() failed (" + std::string(strerror(errno)) + ")");
 
 	delete[] fi.pipefd;
 	segment->deallocate(fi.shm_fq);

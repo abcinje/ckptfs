@@ -23,11 +23,11 @@ include_directories(${SYSCALL_INTERCEPT_INCLUDE_DIRS})
 ###################
 
 # drainer
-add_executable(drainer drainer.cpp drainer_syscall.cpp message.cpp)
+add_executable(drainer drainer.cpp drainer_syscall.cpp message.cpp random.cpp util.cpp)
 set_target_properties(drainer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 target_link_libraries(drainer Threads::Threads rt ${Boost_LIBRARIES})
 
 # libckpt.so
-add_library(ckpt SHARED ckpt.cpp ckpt_syscall.cpp message.cpp random.cpp util.cpp)
+add_library(ckpt SHARED ckpt.cpp ckpt_syscall.cpp message.cpp util.cpp)
 set_target_properties(ckpt PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 target_link_libraries(ckpt Threads::Threads rt ${Boost_LIBRARIES} ${SYSCALL_INTERCEPT_LIBRARIES})
