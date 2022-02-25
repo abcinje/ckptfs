@@ -221,10 +221,10 @@ int ckpt::close(int fd, int *result)
 		fq->issue(message(SYS_write, boffset, bcount));
 
 	if (fsynced || fdatasynced) {
-		int flags = fsynced ? 0 : CKPT_S_DATAONLY;
+		int flags = fsynced ? 0 : CKPT_SYNCLOSE_DATA;
 
 		if (fsync_lazy_level == 1) {
-			flags |= CKPT_S_CLOSEWAIT;
+			flags |= CKPT_SYNCLOSE_WAIT;
 
 			shm_synced = segment->allocate(sizeof(bi::interprocess_semaphore));
 			new (shm_synced) bi::interprocess_semaphore(0);
@@ -238,10 +238,12 @@ int ckpt::close(int fd, int *result)
 
 			segment->deallocate(shm_synced);
 		} else if (fsync_lazy_level == 2) {
-			flags |= CKPT_S_CLOSENOWAIT;
+			flags |= CKPT_SYNCLOSE_NOWAIT;
 
 			fq->issue(message(SYS_close, 0, 0, {}, flags));
 		}
+	} else {
+		fq->issue(message(SYS_close, 0, 0, {}));
 	}
 
 	if (syscall_no_intercept(SYS_close, fd) == -1)

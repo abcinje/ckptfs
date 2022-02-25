@@ -112,14 +112,14 @@ void drainer::close(const message &msg)
 	std::string tmp_file(std::move(fi.tmp_file));
 	std::string pfs_file(std::move(fi.pfs_file));
 
-	if (msg.flags & CKPT_S_CLOSEWAIT) {
-		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
+	if (msg.flags & CKPT_SYNCLOSE_WAIT) {
+		int (*synchronize)(int) = (msg.flags & CKPT_SYNCLOSE_DATA) ? (::fdatasync) : (::fsync);
 		if (synchronize(fi.pfs_fd) == -1)
 			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 		shm_synced = segment->get_address_from_handle(msg.handles.synced_handle);
 		(static_cast<bi::interprocess_semaphore *>(shm_synced))->post();
-	} else if (msg.flags & CKPT_S_CLOSENOWAIT) {
-		int (*synchronize)(int) = (msg.flags & CKPT_S_DATAONLY) ? (::fdatasync) : (::fsync);
+	} else if (msg.flags & CKPT_SYNCLOSE_NOWAIT) {
+		int (*synchronize)(int) = (msg.flags & CKPT_SYNCLOSE_DATA) ? (::fdatasync) : (::fsync);
 		if (synchronize(fi.pfs_fd) == -1)
 			throw std::runtime_error("fsync() or fdatasync() failed (" + std::string(strerror(errno)) + ")");
 	}
