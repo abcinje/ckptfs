@@ -38,7 +38,6 @@ void error(std::string msg);
 
 class finfo {
 public:
-	int pfs_fd;
 	off_t offset;
 	off_t len;
 	off_t boffset;
@@ -47,13 +46,13 @@ public:
 	bool fdatasynced;
 	message_queue *fq;
 
-	finfo(int pfs_fd, off_t offset, off_t len, off_t boffset, size_t bcount, bool fsynced, bool fdatasynced, message_queue *fq)
-			: pfs_fd(pfs_fd), offset(offset), len(len), boffset(boffset), bcount(bcount), fsynced(fsynced), fdatasynced(fdatasynced), fq(fq)
+	finfo(off_t offset, off_t len, off_t boffset, size_t bcount, bool fsynced, bool fdatasynced, message_queue *fq)
+			: offset(offset), len(len), boffset(boffset), bcount(bcount), fsynced(fsynced), fdatasynced(fdatasynced), fq(fq)
 	{
 	}
 };
 
-static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (pfs_fd, offset, len, boffset, bcount, fq)
+static finfo *fmap[MAX_NUM_FDS]; // fmap: bb_fd -> (offset, len, boffset, bcount, fq)
 
 
 
@@ -84,7 +83,6 @@ int ckpt::read(int fd, void *buf, size_t count, ssize_t *result)
 int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 {
 	finfo *fi;
-	int pfs_fd;
 	off_t *offset, *len;
 	off_t *boffset;
 	size_t *bcount;
@@ -92,7 +90,6 @@ int ckpt::write(int fd, const void *buf, size_t count, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
 		len = &fi->len;
 		boffset = &fi->boffset;
@@ -130,7 +127,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 {
 	void *shm_pathname, *shm_fq, *shm_synced;
 	shm_handle pathname_handle, fq_handle, synced_handle;
-	int bb_fd, pfs_fd;
+	int bb_fd;
 	struct stat statbuf;
 	off_t len;
 
@@ -158,9 +155,6 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 	if ((bb_fd = syscall_no_intercept(SYS_open, bb_file.c_str(), flags, mode)) == -1)
 		error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((pfs_fd = syscall_no_intercept(SYS_open, pfs_file.c_str(), (flags | O_CREAT) & ~O_EXCL, mode)) == -1)
-		error("open() failed (" + std::string(strerror(errno)) + ")");
-
 	shm_pathname = segment->allocate(ckpt_file.size() + 1);
 	std::memcpy(shm_pathname, ckpt_file.data(), ckpt_file.size() + 1);
 	pathname_handle = segment->get_handle_from_address(shm_pathname);
@@ -178,12 +172,12 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 		.pathname_handle = pathname_handle,
 		.synced_handle = synced_handle,
 	};
-	mq->issue(message(SYS_open, 0, 0, handles));
+	mq->issue(message(SYS_open, 0, 0, handles, flags, mode));
 	(static_cast<bi::interprocess_semaphore *>(shm_synced))->wait();
 
 	segment->deallocate(shm_synced);
 
-	if (syscall_no_intercept(SYS_fstat, pfs_fd, &statbuf) == -1)
+	if (syscall_no_intercept(SYS_fstat, bb_fd, &statbuf) == -1)
 		error("fstat() failed (" + std::string(strerror(errno)) + ")");
 	len = statbuf.st_size;
 
@@ -191,7 +185,7 @@ int ckpt::open(const char *pathname, int flags, mode_t mode, int *result)
 		error("ckpt::open() failed (fd is greater than or equal to MAX_NUM_FDS)");
 	if (fmap[bb_fd])
 		error("ckpt::open() failed (the same key already exists)");
-	fmap[bb_fd] = new finfo(pfs_fd, 0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
+	fmap[bb_fd] = new finfo(0, len, 0, 0, false, false, static_cast<message_queue *>(shm_fq));
 
 	*result = bb_fd;
 	return 0;
@@ -358,7 +352,6 @@ int ckpt::pread(int fd, void *buf, size_t count, off_t offset, ssize_t *result)
 int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *result)
 {
 	finfo *fi;
-	int pfs_fd;
 	off_t *len;
 	off_t *boffset;
 	size_t *bcount;
@@ -366,7 +359,6 @@ int ckpt::pwrite(int fd, const void *buf, size_t count, off_t offset, ssize_t *r
 
 	fi = fmap[fd];
 	if (fi) {
-		pfs_fd = fi->pfs_fd;
 		len = &fi->len;
 		boffset = &fi->boffset;
 		bcount = &fi->bcount;
@@ -422,7 +414,6 @@ int ckpt::readv(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 {
 	finfo *fi;
-	int pfs_fd;
 	off_t *offset, *len;
 	off_t *boffset;
 	size_t *bcount;
@@ -430,7 +421,6 @@ int ckpt::writev(int fd, const struct iovec *iov, int iovcnt, ssize_t *result)
 
 	fi = fmap[fd];
 	if (fi) {
-		pfs_fd = fi->pfs_fd;
 		offset = &fi->offset;
 		len = &fi->len;
 		boffset = &fi->boffset;

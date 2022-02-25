@@ -84,7 +84,7 @@ void drainer::open(const message &msg)
 	if ((bb_fd = ::open(bb_file.c_str(), O_RDONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((pfs_fd = ::open(pfs_file.c_str(), O_WRONLY)) == -1)
+	if ((pfs_fd = ::open(pfs_file.c_str(), msg.flags, msg.mode)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
 	pipefd = new int[2];

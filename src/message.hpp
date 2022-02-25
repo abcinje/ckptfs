@@ -25,9 +25,10 @@ public:
 		shm_handle fq_handle, pathname_handle, synced_handle;
 	} handles;
 	int flags;
+	mode_t mode;
 
 	message(void);
-	message(long syscall, off_t offset, size_t len, shm_handles handles = {}, int flags = 0);
+	message(long syscall, off_t offset, size_t len, shm_handles handles = {}, int flags = 0, mode_t mode = 0);
 };
 
 #endif //CKPTFS_MESSAGE_HPP
