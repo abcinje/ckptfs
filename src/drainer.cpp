@@ -92,4 +92,6 @@ int main(int argc, char *argv[])
 		std::thread worker(drain, fq);
 		worker.detach();
 	}
+
+	throw std::logic_error("main() failed (control should not reach here)");
 }
