@@ -26,7 +26,7 @@ namespace bi = boost::interprocess;
 
 using message_queue = queue<message>;
 
-#define PIPE_CAPACITY (1 << 20)
+#define BUF_SIZE (1 << 20)
 
 extern std::string *ckpt_dir, *bb_dir, *pfs_dir;
 extern bi::managed_shared_memory *segment;
@@ -35,7 +35,7 @@ thread_local struct finfo {
 	int bb_fd;
 	int pfs_fd;
 	void *shm_fq;
-	int *pipefd;
+	char *buf;
 	std::string tmp_file;
 	std::string pfs_file;
 } fi;
@@ -48,21 +48,19 @@ thread_local struct finfo {
 
 void drainer::write(const message &msg)
 {
-	off_t offset0, offset1;
 	ssize_t len, spliced;
 
-	offset0 = offset1 = msg.offset;
 	if ((len = msg.len) < 0)
 		throw std::overflow_error("drainer::write() failed (integer overflow)");
 
 	do {
-		spliced = (len < PIPE_CAPACITY) ? len : PIPE_CAPACITY;
+		spliced = (len < BUF_SIZE) ? len : BUF_SIZE;
 
-		if (::splice(fi.bb_fd, &offset1, fi.pipefd[1], nullptr, spliced, SPLICE_F_MOVE) == -1)
-			throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+		if (::pread(fi.bb_fd, fi.buf, spliced, msg.offset) == -1)
+			throw std::runtime_error("pread() failed (" + std::string(strerror(errno)) + ")");
 
-		if (::splice(fi.pipefd[0], nullptr, fi.pfs_fd, &offset0, spliced, SPLICE_F_MOVE) == -1)
-			throw std::runtime_error("splice() failed (" + std::string(strerror(errno)) + ")");
+		if (::pwrite(fi.pfs_fd, fi.buf, spliced, msg.offset) == -1)
+			throw std::runtime_error("pwrite() failed (" + std::string(strerror(errno)) + ")");
 
 		len -= spliced;
 	} while (len > 0);
@@ -71,7 +69,7 @@ void drainer::write(const message &msg)
 void drainer::open(const message &msg)
 {
 	void *shm_pathname, *shm_fq;
-	int bb_fd, pfs_fd, *pipefd;
+	int bb_fd, pfs_fd;
 	uint64_t ofid;
 
 	shm_pathname = segment->get_address_from_handle(msg.handles.pathname_handle);
@@ -95,14 +93,7 @@ void drainer::open(const message &msg)
 	if ((pfs_fd = ::open(tmp_file.c_str(), msg.flags, msg.mode)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	pipefd = new int[2];
-	if (::pipe(pipefd) == -1)
-		throw std::runtime_error("pipe() failed (" + std::string(strerror(errno)) + ")");
-
-	if (::fcntl(pipefd[0], F_SETPIPE_SZ, PIPE_CAPACITY) == -1)
-		throw std::runtime_error("fcntl() failed (" + std::string(strerror(errno)) + ")");
-
-	fi = {bb_fd, pfs_fd, shm_fq, pipefd, std::move(tmp_file), std::move(pfs_file)};
+	fi = {bb_fd, pfs_fd, shm_fq, new char[BUF_SIZE], std::move(tmp_file), std::move(pfs_file)};
 }
 
 void drainer::close(const message &msg)
@@ -127,7 +118,7 @@ void drainer::close(const message &msg)
 	if (::rename(tmp_file.c_str(), pfs_file.c_str()) == -1)
 		throw std::runtime_error("rename() failed (" + std::string(strerror(errno)) + ")");
 
-	delete[] fi.pipefd;
+	delete[] fi.buf;
 	segment->deallocate(fi.shm_fq);
 
 	if (::close(fi.bb_fd) == -1)
