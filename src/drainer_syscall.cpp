@@ -1,4 +1,5 @@
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <shared_mutex>
@@ -68,6 +69,7 @@ void drainer::open(const message &msg)
 {
 	void *shm_pathname, *shm_fq;
 	int bb_fd, pfs_fd;
+	void *buf;
 	uint64_t ofid;
 
 	shm_pathname = segment->get_address_from_handle(msg.handles.pathname_handle);
@@ -88,10 +90,14 @@ void drainer::open(const message &msg)
 	if ((bb_fd = ::open(bb_file.c_str(), O_RDONLY)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	if ((pfs_fd = ::open(tmp_file.c_str(), msg.flags, msg.mode)) == -1)
+	if ((pfs_fd = ::open(tmp_file.c_str(), msg.flags | O_DIRECT, msg.mode)) == -1)
 		throw std::runtime_error("open() failed (" + std::string(strerror(errno)) + ")");
 
-	fi = {bb_fd, pfs_fd, shm_fq, new char[BUF_SIZE], std::move(tmp_file), std::move(pfs_file)};
+	int err;
+	if ((err = posix_memalign(&buf, 512, BUF_SIZE)) != 0)
+		throw std::runtime_error("posix_memalign() failed (" + std::string(strerror(errno)) + ")");
+
+	fi = {bb_fd, pfs_fd, shm_fq, static_cast<char *>(buf), std::move(tmp_file), std::move(pfs_file)};
 }
 
 void drainer::close(const message &msg)
@@ -116,7 +122,7 @@ void drainer::close(const message &msg)
 	if (::rename(tmp_file.c_str(), pfs_file.c_str()) == -1)
 		throw std::runtime_error("rename() failed (" + std::string(strerror(errno)) + ")");
 
-	delete[] fi.buf;
+	free(fi.buf);
 	segment->deallocate(fi.shm_fq);
 
 	if (::close(fi.bb_fd) == -1)
